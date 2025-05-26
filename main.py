@@ -290,57 +290,61 @@ def perform_logout():
     confirm = messagebox.askyesno("確認登出", "您確定要登出系統嗎？")
     
     if confirm:
-        try:
-            # 關閉當前應用程式介面
-            global current_app
-            if current_app:
-                current_app.close_interface()
-                current_app = None
-                
-            # 清理可能存在的toplevel窗口
-            for widget in root.winfo_children():
-                if isinstance(widget, tk.Toplevel):
-                    try:
-                        widget.destroy()
-                    except:
-                        pass
+        perform_logout_confirmed()
 
-            # 清空使用者資訊
-            try:
-                label_info_username.config(text="")
-                label_info_name.config(text="")
-                label_info_email.config(text="")
-                label_info_role.config(text="")
-            except:
-                pass
+def perform_logout_confirmed():
+    """執行已確認的登出操作（不再詢問確認）"""
+    try:
+        # 關閉當前應用程式介面
+        global current_app
+        if current_app:
+            current_app.close_interface()
+            current_app = None
             
-            # 隱藏主要內容框架
-            try:
-                frame_main.pack_forget()
-            except:
-                pass
+        # 清理可能存在的toplevel窗口
+        for widget in root.winfo_children():
+            if isinstance(widget, tk.Toplevel):
+                try:
+                    widget.destroy()
+                except:
+                    pass
+
+        # 清空使用者資訊
+        try:
+            label_info_username.config(text="")
+            label_info_name.config(text="")
+            label_info_email.config(text="")
+            label_info_role.config(text="")
+        except:
+            pass
+        
+        # 隱藏主要內容框架
+        try:
+            frame_main.pack_forget()
+        except:
+            pass
+        
+        # 清空登入表單
+        try:
+            entry_username.delete(0, tk.END)
+            entry_password.delete(0, tk.END)
+        except:
+            pass
+        
+        # 顯示登入框架
+        try:
+            frame_login.pack(pady=50)
+        except:
+            pass
             
-            # 清空登入表單
-            try:
-                entry_username.delete(0, tk.END)
-                entry_password.delete(0, tk.END)
-            except:
-                pass
-            
-            # 顯示登入框架
-            try:
-                frame_login.pack(pady=50)
-            except:
-                pass
-                
-        except Exception as e:
-            print(f"登出時發生錯誤: {e}")
-            # 即使發生錯誤也要顯示登入界面
-            try:
-                frame_main.pack_forget()
-                frame_login.pack(pady=50)
-            except:
-                pass
+    except Exception as e:
+        print(f"登出時發生錯誤: {e}")
+        # 即使發生錯誤也要顯示登入界面
+        try:
+            frame_main.pack_forget()
+            frame_login.pack(pady=50)
+        except:
+            pass
 
 
 def perform_registration():
@@ -360,7 +364,7 @@ button_register.config(command=perform_registration)
 root.bind("<Return>", lambda event: perform_login())
 
 # 綁定登出事件
-root.bind("<<Logout>>", lambda event: perform_logout())
+root.bind("<<LogoutConfirmed>>", lambda event: perform_logout_confirmed())
 
 # 啟動時間更新
 update_time()

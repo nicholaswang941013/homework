@@ -1977,8 +1977,8 @@ class RequirementManager:
                 # 關閉當前需求管理器的所有資源
                 self.close()
                 
-                # 通過事件機制觸發主程式的登出
-                self.root.event_generate("<<Logout>>")
+                # 通過事件機制觸發主程式的登出，傳遞已確認的標記
+                self.root.event_generate("<<LogoutConfirmed>>")
                 
             except Exception as e:
                 print(f"登出時發生錯誤: {e}")
