@@ -359,6 +359,9 @@ button_register.config(command=perform_registration)
 # 綁定Enter鍵到登入
 root.bind("<Return>", lambda event: perform_login())
 
+# 綁定登出事件
+root.bind("<<Logout>>", lambda event: perform_logout())
+
 # 啟動時間更新
 update_time()
 

@@ -1967,15 +1967,22 @@ class RequirementManager:
     
     def perform_logout(self):
         """執行登出操作"""
-        # 導入main模組中的登出函數
-        try:
-            import main
-            main.perform_logout()
-        except Exception as e:
-            print(f"登出時發生錯誤: {e}")
-            # 如果無法調用main的登出函數，顯示錯誤訊息
-            from tkinter import messagebox
-            messagebox.showerror("錯誤", "登出功能暫時無法使用，請關閉程式重新登入")
+        from tkinter import messagebox
+        
+        # 詢問用戶是否確定要登出
+        confirm = messagebox.askyesno("確認登出", "您確定要登出系統嗎？")
+        
+        if confirm:
+            try:
+                # 關閉當前需求管理器的所有資源
+                self.close()
+                
+                # 通過事件機制觸發主程式的登出
+                self.root.event_generate("<<Logout>>")
+                
+            except Exception as e:
+                print(f"登出時發生錯誤: {e}")
+                messagebox.showerror("錯誤", f"登出時發生錯誤: {e}")
 
     def load_deleted_requirements(self):
         """載入已刪除的需求單"""
