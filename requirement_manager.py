@@ -43,15 +43,63 @@ class RequirementManager:
         if self.user_id is None:
             print(f"警告: 無法獲取用戶ID! 用戶對象: {current_user}")
         
-        self.conn = create_connection()
+        # 不再保持長期連接，改為每次操作時創建新連接
+        self.conn = None
         self.admin_frame = None
         self.admin_notebook = None
         self.staff_frame = None
         self.staff_req_treeview = None
         
+        # 追蹤打開的 Toplevel 視窗
+        self.open_windows = []
+        
         # 不再需要啟動定時任務，因為已經移到全局範圍
         # self.scheduler_running = False
         # self.start_scheduler()
+    
+    def get_connection(self):
+        """獲取新的資料庫連接"""
+        return create_connection()
+    
+    def execute_with_connection(self, func, *args, **kwargs):
+        """使用新連接執行資料庫操作"""
+        conn = self.get_connection()
+        if not conn:
+            return None
+        try:
+            result = func(conn, *args, **kwargs)
+            return result
+        except Exception as e:
+            print(f"資料庫操作錯誤: {e}")
+            return None
+        finally:
+            try:
+                conn.close()
+            except:
+                pass
+    
+    def create_toplevel_window(self, title, geometry="600x500"):
+        """創建並追蹤 Toplevel 視窗"""
+        window = tk.Toplevel(self.root)
+        window.title(title)
+        window.geometry(geometry)
+        window.resizable(True, True)
+        window.grab_set()  # 模態對話框
+        
+        # 追蹤視窗
+        self.open_windows.append(window)
+        
+        # 當視窗關閉時從追蹤列表中移除
+        def on_window_close():
+            try:
+                if window in self.open_windows:
+                    self.open_windows.remove(window)
+                window.destroy()
+            except:
+                pass
+        
+        window.protocol("WM_DELETE_WINDOW", on_window_close)
+        return window
     
     def setup_admin_interface(self):
         """設置管理員派發需求單介面"""
@@ -111,7 +159,7 @@ class RequirementManager:
         
         # 員工下拉選單
         self.staff_var = tk.StringVar()
-        staffs = get_all_staff(self.conn)
+        staffs = self.execute_with_connection(get_all_staff) or []
         self.staff_combobox = ttk.Combobox(
             staff_selection_frame,
             textvariable=self.staff_var,
@@ -314,7 +362,7 @@ class RequirementManager:
         ttk.Label(staff_filter_frame, text="員工過濾:").pack(side=tk.LEFT, padx=(0, 10))
         
         # 獲取所有員工
-        staffs = get_all_staff(self.conn)
+        staffs = self.execute_with_connection(get_all_staff) or []
         staff_options = [("全部員工", "all")] + [(staff[1], str(staff[0])) for staff in staffs]
         
         # 建立員工過濾下拉選單
@@ -442,7 +490,7 @@ class RequirementManager:
             self.admin_reviewing_treeview.delete(item)
             
         # 獲取所有已發派的需求單
-        requirements = get_admin_dispatched_requirements(self.conn, self.user_id)
+        requirements = self.execute_with_connection(get_admin_dispatched_requirements, self.user_id) or []
         
         # 篩選狀態為「待審核」的需求單
         reviewing_requirements = [req for req in requirements if req[3] == 'reviewing']
@@ -506,7 +554,7 @@ class RequirementManager:
         ttk.Label(staff_filter_frame, text="員工過濾:").pack(side=tk.LEFT, padx=(0, 10))
         
         # 獲取所有員工
-        staffs = get_all_staff(self.conn)
+        staffs = self.execute_with_connection(get_all_staff) or []
         staff_options = [("全部員工", "all")] + [(staff[1], str(staff[0])) for staff in staffs]
         
         # 建立員工過濾下拉選單
@@ -679,7 +727,7 @@ class RequirementManager:
             return
             
         # 獲取數據
-        requirements = get_user_requirements(self.conn, self.user_id)
+        requirements = self.execute_with_connection(get_user_requirements, self.user_id) or []
         
         # 獲取狀態過濾條件
         status_filter = self.staff_status_filter_var.get()
@@ -751,7 +799,7 @@ class RequirementManager:
         req_id = item['values'][0]
         
         # 獲取需求單詳情
-        requirements = get_user_requirements(self.conn, self.user_id)
+        requirements = self.execute_with_connection(get_user_requirements, self.user_id) or []
         requirement = None
         
         for req in requirements:
@@ -770,11 +818,7 @@ class RequirementManager:
             req_id, title, description, status, priority, created_at, assigner_name, scheduled_time = requirement
             comment = None
         
-        detail_window = tk.Toplevel(self.root)
-        detail_window.title(f"需求單詳情 #{req_id}")
-        detail_window.geometry("550x550")  # 增加視窗高度和寬度
-        detail_window.resizable(True, True)  # 允許調整大小
-        detail_window.grab_set()  # 模態對話框
+        detail_window = self.create_toplevel_window(f"需求單詳情 #{req_id}", "550x550")
         
         # 標題
         ttk.Label(
@@ -967,8 +1011,8 @@ class RequirementManager:
                 messagebox.showerror("錯誤", f"日期時間格式不正確: {e}")
                 return
 
-        req_id = create_requirement(
-            self.conn,
+        req_id = self.execute_with_connection(
+            create_requirement,
             title,
             description,
             self.user_id,
@@ -1028,19 +1072,23 @@ class RequirementManager:
                 except:
                     pass
                 
-            # 關閉資料庫連接
-            if hasattr(self, 'conn') and self.conn:
+            # 清理追蹤的視窗
+            for window in self.open_windows:
                 try:
-                    self.conn.close()
-                    self.conn = None
+                    if window.winfo_exists():
+                        window.destroy()
                 except:
                     pass
+            self.open_windows.clear()
+                
         except Exception as e:
             print(f"關閉需求單管理界面時發生錯誤: {e}")
-            # 即使發生錯誤也要確保資料庫連接被關閉
+            # 即使發生錯誤也要確保資源被清理
             try:
-                if hasattr(self, 'conn') and self.conn:
-                    self.conn.close()
+                for window in self.open_windows:
+                    if window.winfo_exists():
+                        window.destroy()
+                self.open_windows.clear()
             except:
                 pass
 
@@ -1065,10 +1113,10 @@ class RequirementManager:
         # 獲取數據
         if staff_id:
             # 按特定員工篩選
-            requirements = get_admin_requirements_by_staff(self.conn, self.user_id, staff_id)
+            requirements = self.execute_with_connection(get_admin_requirements_by_staff, self.user_id, staff_id) or []
         else:
             # 獲取所有需求單
-            requirements = get_admin_dispatched_requirements(self.conn, self.user_id)
+            requirements = self.execute_with_connection(get_admin_dispatched_requirements, self.user_id) or []
         
         # 添加數據到表格
         for req in requirements:
@@ -1144,10 +1192,10 @@ class RequirementManager:
         # 獲取數據
         if staff_id:
             # 按特定員工篩選
-            requirements = get_admin_scheduled_by_staff(self.conn, self.user_id, staff_id)
+            requirements = self.execute_with_connection(get_admin_scheduled_by_staff, self.user_id, staff_id) or []
         else:
             # 獲取所有需求單
-            requirements = get_admin_scheduled_requirements(self.conn, self.user_id)
+            requirements = self.execute_with_connection(get_admin_scheduled_requirements, self.user_id) or []
         
         # 添加數據到表格
         for req in requirements:
@@ -1183,7 +1231,7 @@ class RequirementManager:
         req_id = item['values'][0]
         
         # 獲取需求單詳情
-        requirements = get_admin_dispatched_requirements(self.conn, self.user_id)
+        requirements = self.execute_with_connection(get_admin_dispatched_requirements, self.user_id) or []
         requirement = None
         
         for req in requirements:
@@ -1208,11 +1256,7 @@ class RequirementManager:
                 return
         
             # 創建詳情視窗
-            detail_window = tk.Toplevel(self.root)
-            detail_window.title(f"需求單詳情 #{req_id}")
-            detail_window.geometry("600x500")
-            detail_window.resizable(True, True)
-            detail_window.grab_set()  # 模態對話框
+            detail_window = self.create_toplevel_window(f"需求單詳情 #{req_id}", "600x500")
             
             # 標題
             ttk.Label(
@@ -1369,7 +1413,7 @@ class RequirementManager:
         req_id = item['values'][0]
         
         # 獲取需求單詳情
-        requirements = get_admin_scheduled_requirements(self.conn, self.user_id)
+        requirements = self.execute_with_connection(get_admin_scheduled_requirements, self.user_id) or []
         requirement = None
         
         for req in requirements:
@@ -1384,11 +1428,7 @@ class RequirementManager:
         req_id, title, description, priority, scheduled_time, assignee_name, assignee_id = requirement
         
         # 創建詳情視窗
-        detail_window = tk.Toplevel(self.root)
-        detail_window.title(f"預約需求單詳情 #{req_id}")
-        detail_window.geometry("550x550")
-        detail_window.resizable(True, True)
-        detail_window.grab_set()  # 模態對話框
+        detail_window = self.create_toplevel_window(f"預約需求單詳情 #{req_id}", "550x550")
         
         # 標題
         ttk.Label(
@@ -1488,7 +1528,7 @@ class RequirementManager:
             
     def perform_cancel_scheduled(self, req_id, window_to_close=None):
         """執行取消預約發派"""
-        if cancel_scheduled_requirement(self.conn, req_id):
+        if self.execute_with_connection(cancel_scheduled_requirement, req_id):
             messagebox.showinfo("成功", "已成功取消預約發派需求單")
             if window_to_close:
                 window_to_close.destroy()
@@ -1537,11 +1577,7 @@ class RequirementManager:
             return
             
         # 創建提交對話框
-        submit_window = tk.Toplevel(self.root)
-        submit_window.title(f"提交需求單 #{req_id}")
-        submit_window.geometry("550x350")  # 增加視窗大小
-        submit_window.resizable(True, True)  # 允許調整大小
-        submit_window.grab_set()  # 模態對話框
+        submit_window = self.create_toplevel_window(f"提交需求單 #{req_id}", "550x350")
         
         # 標題
         ttk.Label(
@@ -1586,7 +1622,7 @@ class RequirementManager:
             messagebox.showwarning("警告", "請填寫完成情況說明", parent=window)
             return
             
-        if submit_requirement(self.conn, req_id, comment):
+        if self.execute_with_connection(submit_requirement, req_id, comment):
             messagebox.showinfo("成功", "需求單已提交，等待管理員審核")
             window.destroy()
             self.load_user_requirements()  # 重新加載需求單列表
@@ -1597,7 +1633,7 @@ class RequirementManager:
         """執行審核通過需求單"""
         confirm = messagebox.askyesno("確認審核", "確定要審核通過此需求單嗎？")
         if confirm:
-            if approve_requirement(self.conn, req_id):
+            if self.execute_with_connection(approve_requirement, req_id):
                 messagebox.showinfo("成功", "需求單已審核通過，狀態已改為「已完成」")
                 if window:
                     window.destroy()
@@ -1612,7 +1648,7 @@ class RequirementManager:
         """執行退回需求單"""
         confirm = messagebox.askyesno("確認退回", "確定要退回此需求單嗎？狀態將改回「未完成」")
         if confirm:
-            if reject_requirement(self.conn, req_id):
+            if self.execute_with_connection(reject_requirement, req_id):
                 messagebox.showinfo("成功", "需求單已退回，狀態已改為「未完成」")
                 if window:
                     window.destroy()
@@ -1627,7 +1663,7 @@ class RequirementManager:
         """執行使需求單失效"""
         confirm = messagebox.askyesno("確認設為失效", "確定要將此需求單設為失效嗎？此操作無法撤銷！")
         if confirm:
-            if invalidate_requirement(self.conn, req_id):
+            if self.execute_with_connection(invalidate_requirement, req_id):
                 messagebox.showinfo("成功", "需求單已設為失效")
                 if window:
                     window.destroy()
@@ -1640,7 +1676,7 @@ class RequirementManager:
         confirm = messagebox.askyesno("確認刪除", "確定要刪除此需求單嗎？\n刪除後可在垃圾桶中查看或恢復。")
         if confirm:
             try:
-                if delete_requirement(self.conn, req_id):
+                if self.execute_with_connection(delete_requirement, req_id):
                     messagebox.showinfo("成功", "需求單已移至垃圾桶")
                     if window:
                         window.destroy()
@@ -1710,7 +1746,7 @@ class RequirementManager:
             self.trash_treeview.delete(item)
             
         # 從數據庫獲取已刪除的需求單
-        requirements = get_deleted_requirements(self.conn, self.user_id)
+        requirements = self.execute_with_connection(get_deleted_requirements, self.user_id) or []
         
         # 填充樹狀視圖
         for req in requirements:
@@ -1743,7 +1779,7 @@ class RequirementManager:
         req_id = item['values'][0]
         
         # 從數據庫獲取所有已刪除的需求單
-        requirements = get_deleted_requirements(self.conn, self.user_id)
+        requirements = self.execute_with_connection(get_deleted_requirements, self.user_id) or []
         
         # 查找對應的需求單
         requirement = None
@@ -1767,11 +1803,7 @@ class RequirementManager:
         comment = requirement[9] if requirement[9] else ""
         
         # 創建詳情視窗
-        detail_window = tk.Toplevel(self.root)
-        detail_window.title(f"已刪除需求單詳情 #{req_id}")
-        detail_window.geometry("600x500")
-        detail_window.resizable(True, True)
-        detail_window.grab_set()  # 模態對話框
+        detail_window = self.create_toplevel_window(f"已刪除需求單詳情 #{req_id}", "600x500")
         
         # 標題
         ttk.Label(
@@ -1886,7 +1918,7 @@ class RequirementManager:
         """執行恢復需求單操作"""
         confirm = messagebox.askyesno("確認恢復", "確定要恢復此需求單嗎？")
         if confirm:
-            if restore_requirement(self.conn, req_id):
+            if self.execute_with_connection(restore_requirement, req_id):
                 messagebox.showinfo("成功", "需求單已恢復")
                 if window:
                     window.destroy()
@@ -1902,7 +1934,10 @@ class RequirementManager:
             current_selection = self.staff_var.get()
             
             # 重新從數據庫獲取員工列表
-            staffs = get_all_staff(self.conn)
+            staffs = self.execute_with_connection(get_all_staff)
+            if staffs is None:
+                messagebox.showerror("錯誤", "無法獲取員工列表")
+                return
             
             # 更新下拉選單的值
             self.staff_combobox['values'] = [f"{staff[1]} (ID:{staff[0]})" for staff in staffs]
@@ -1923,7 +1958,7 @@ class RequirementManager:
             self.admin_reviewing_treeview.delete(item)
             
         # 獲取所有已發派的需求單
-        requirements = get_admin_dispatched_requirements(self.conn, self.user_id)
+        requirements = self.execute_with_connection(get_admin_dispatched_requirements, self.user_id) or []
         
         # 篩選狀態為「待審核」的需求單
         reviewing_requirements = [req for req in requirements if req[3] == 'reviewing']
@@ -1978,7 +2013,7 @@ class RequirementManager:
         req_id = item['values'][0]
         
         # 獲取需求單詳情
-        requirements = get_admin_dispatched_requirements(self.conn, self.user_id)
+        requirements = self.execute_with_connection(get_admin_dispatched_requirements, self.user_id) or []
         requirement = None
         
         for req in requirements:
@@ -1999,11 +2034,7 @@ class RequirementManager:
             completed_at = ""
         
         # 創建詳情對話框
-        detail_window = tk.Toplevel(self.root)
-        detail_window.title(f"待審核需求單詳情 #{req_id}")
-        detail_window.geometry("600x650")  # 增加視窗高度
-        detail_window.resizable(True, True)  # 允許調整大小
-        detail_window.grab_set()  # 模態對話框
+        detail_window = self.create_toplevel_window(f"待審核需求單詳情 #{req_id}", "600x650")
         
         # 標題
         ttk.Label(

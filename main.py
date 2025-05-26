@@ -8,7 +8,6 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from auth import login
 from database import create_connection, initialize_database, dispatch_scheduled_requirements
-from models import User
 from requirement_manager import RequirementManager
 from registration import show_registration_form
 import datetime
@@ -207,7 +206,6 @@ class RequirementApp:
     def __init__(self, root, current_user):
         self.root = root
         self.current_user = current_user
-        self.conn = create_connection()
         self.admin_frame = None
         self.staff_frame = None
         self.requirement_manager = None
@@ -253,18 +251,10 @@ class RequirementApp:
                 self.staff_frame.pack_forget()
                 self.staff_frame = None
             
-            # 關閉資料庫連接
-            if self.conn:
-                self.conn.close()
-                self.conn = None
         except Exception as e:
             print(f"關閉介面時發生錯誤: {e}")
             # 即使發生錯誤也要確保資源被清理
-            try:
-                if self.conn:
-                    self.conn.close()
-            except:
-                pass
+            pass
 
 
 # 全局變數存儲當前應用程式實例
@@ -395,8 +385,6 @@ def on_closing():
             # 只清理資源，不詢問用戶
             if current_app.requirement_manager:
                 current_app.requirement_manager.close()
-            if current_app.conn:
-                current_app.conn.close()
             current_app = None
             
         # 等待調度器線程結束
