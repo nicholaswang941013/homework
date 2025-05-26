@@ -180,25 +180,50 @@ button_register = ttk.Button(frame_buttons, text="註冊新帳號")
 button_register.pack(side=tk.LEFT)
 
 
-# 使用者資訊界面 (登入後顯示)
-frame_info = ttk.Frame(root, padding=20)
+# 主要內容區域 (登入後顯示)
+frame_main = ttk.Frame(root)
 
-ttk.Label(frame_info, text="使用者資訊", font=('Arial', 14, 'bold')).pack(pady=5)
+# 左側功能區域
+frame_left = ttk.Frame(frame_main, padding=10)
+frame_left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-label_info_username = ttk.Label(frame_info, text="")
-label_info_username.pack(pady=5)
+# 右側個人資料區域
+frame_right = ttk.Frame(frame_main, padding=15, relief=tk.RIDGE, borderwidth=2)
+frame_right.pack(side=tk.RIGHT, fill=tk.Y, padx=(10, 0))
+frame_right.pack_propagate(False)  # 防止子元件改變框架大小
+frame_right.config(width=250, height=400)  # 設定固定寬度和高度
 
-label_info_name = ttk.Label(frame_info, text="")
-label_info_name.pack(pady=5)
+# 個人資料標題
+title_label = ttk.Label(frame_right, text="個人資料", font=('Arial', 14, 'bold'))
+title_label.pack(pady=(0, 20))
 
-label_info_email = ttk.Label(frame_info, text="")
-label_info_email.pack(pady=5)
+# 使用者資訊區域
+info_frame = ttk.Frame(frame_right)
+info_frame.pack(fill=tk.X, pady=(0, 20))
 
-label_info_role = ttk.Label(frame_info, text="")
-label_info_role.pack(pady=5)
+# 使用者資訊標籤
+label_info_username = ttk.Label(info_frame, text="", font=('Arial', 10), wraplength=200)
+label_info_username.pack(pady=5, anchor=tk.W)
 
-# 新增登出按鈕
-button_logout = ttk.Button(frame_info, text="登出")
+label_info_name = ttk.Label(info_frame, text="", font=('Arial', 10), wraplength=200)
+label_info_name.pack(pady=5, anchor=tk.W)
+
+label_info_email = ttk.Label(info_frame, text="", font=('Arial', 10), wraplength=200)
+label_info_email.pack(pady=5, anchor=tk.W)
+
+label_info_role = ttk.Label(info_frame, text="", font=('Arial', 10), wraplength=200)
+label_info_role.pack(pady=5, anchor=tk.W)
+
+# 分隔線
+separator = ttk.Separator(frame_right, orient='horizontal')
+separator.pack(fill=tk.X, pady=20)
+
+# 按鈕區域
+button_frame = ttk.Frame(frame_right)
+button_frame.pack(fill=tk.X)
+
+# 登出按鈕
+button_logout = ttk.Button(button_frame, text="登出", width=18)
 button_logout.pack(pady=10)
 
 
@@ -217,8 +242,8 @@ class RequirementApp:
 
     def setup_admin_interface(self):
         """系統管理員界面"""
-        # 使用需求單管理器設置界面
-        self.requirement_manager = RequirementManager(self.root, self.current_user)
+        # 使用需求單管理器設置界面，將其放在左側區域
+        self.requirement_manager = RequirementManager(frame_left, self.current_user)
         self.admin_frame = self.requirement_manager.setup_admin_interface()
 
     def setup_staff_interface(self):
@@ -230,8 +255,8 @@ class RequirementApp:
             
         print(f"設置員工界面，用戶ID: {self.current_user.id}, 用戶名: {self.current_user.username}")
             
-        # 使用需求單管理器設置員工界面
-        self.requirement_manager = RequirementManager(self.root, self.current_user)
+        # 使用需求單管理器設置員工界面，將其放在左側區域
+        self.requirement_manager = RequirementManager(frame_left, self.current_user)
         self.staff_frame = self.requirement_manager.setup_staff_interface()
 
     def close_interface(self):
@@ -282,7 +307,7 @@ def perform_login():
         else:
             label_info_role.config(text=f"角色: 一般員工")
 
-        frame_info.pack()
+        frame_main.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         # 初始化主應用程式
         global current_app
@@ -321,9 +346,9 @@ def perform_logout():
             except:
                 pass
             
-            # 隱藏使用者資訊框架
+            # 隱藏主要內容框架
             try:
-                frame_info.pack_forget()
+                frame_main.pack_forget()
             except:
                 pass
             
@@ -344,7 +369,7 @@ def perform_logout():
             print(f"登出時發生錯誤: {e}")
             # 即使發生錯誤也要顯示登入界面
             try:
-                frame_info.pack_forget()
+                frame_main.pack_forget()
                 frame_login.pack(pady=50)
             except:
                 pass
