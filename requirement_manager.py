@@ -1255,6 +1255,10 @@ class RequirementManager:
                 messagebox.showerror("錯誤", "需求單詳情不完整")
                 return
         
+            # 轉換狀態和緊急程度為顯示文字
+            status_text = self.get_status_display_text(status)
+            priority_text = "緊急" if priority == "urgent" else "普通"
+        
             # 創建詳情視窗
             detail_window = self.create_toplevel_window(f"需求單詳情 #{req_id}", "600x500")
             
@@ -1275,15 +1279,15 @@ class RequirementManager:
             
             ttk.Label(
                 left_details, 
-                text=f"狀態: {status}", 
+                text=f"狀態: {status_text}", 
                 font=('Arial', 10)
             ).pack(pady=2, anchor=tk.W)
             
             ttk.Label(
                 left_details, 
-                text=f"緊急程度: {priority}", 
+                text=f"緊急程度: {priority_text}", 
                 font=('Arial', 10),
-                foreground="red" if priority == "緊急" else "black"
+                foreground="red" if priority == "urgent" else "black"
             ).pack(pady=2, anchor=tk.W)
             
             ttk.Label(
@@ -1302,7 +1306,7 @@ class RequirementManager:
                 font=('Arial', 10)
             ).pack(pady=2, anchor=tk.W)
             
-            if status in ["待審核", "已完成"]:
+            if status in ["reviewing", "completed"]:
                 ttk.Label(
                     right_details, 
                     text=f"完成時間: {completed_at}", 
@@ -1365,7 +1369,7 @@ class RequirementManager:
             left_button_frame.pack(side=tk.LEFT, fill=tk.X)
             
             # 如果狀態是待審核，顯示審核和退回按鈕
-            if status == "待審核":
+            if status == "reviewing":
                 ttk.Button(
                     left_button_frame, 
                     text="審核通過", 
@@ -1379,7 +1383,7 @@ class RequirementManager:
                 ).pack(side=tk.LEFT, padx=5)
             
             # 如果狀態不是已失效，顯示設為失效按鈕
-            if status != "已失效":
+            if status != "invalid":
                 ttk.Button(
                     left_button_frame, 
                     text="設為失效", 
