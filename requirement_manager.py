@@ -163,12 +163,22 @@ class RequirementManager:
         )
         self.btn_trash.pack(pady=5, fill=tk.X)
         
+        # 個人資料按鈕
+        self.btn_profile = ttk.Button(
+            button_frame, 
+            text="個人資料", 
+            width=15,
+            command=lambda: self.switch_tab("profile")
+        )
+        self.btn_profile.pack(pady=5, fill=tk.X)
+        
         # 創建各個標籤頁的內容框架
         self.dispatch_tab = ttk.Frame(self.content_frame)
         self.dispatched_tab = ttk.Frame(self.content_frame)
         self.reviewing_tab = ttk.Frame(self.content_frame)
         self.scheduled_tab = ttk.Frame(self.content_frame)
         self.trash_tab = ttk.Frame(self.content_frame)
+        self.profile_tab = ttk.Frame(self.content_frame)
         
         # 設置各個標籤頁的內容
         self.setup_dispatch_tab(self.dispatch_tab)
@@ -176,6 +186,7 @@ class RequirementManager:
         self.setup_reviewing_tab(self.reviewing_tab)
         self.setup_scheduled_tab(self.scheduled_tab)
         self.setup_trash_tab(self.trash_tab)
+        self.setup_profile_tab(self.profile_tab)
         
         # 預設顯示發派需求單
         self.switch_tab("dispatch")
@@ -185,11 +196,11 @@ class RequirementManager:
     def switch_tab(self, tab_name):
         """切換標籤頁"""
         # 隱藏所有標籤頁
-        for tab in [self.dispatch_tab, self.dispatched_tab, self.reviewing_tab, self.scheduled_tab, self.trash_tab]:
+        for tab in [self.dispatch_tab, self.dispatched_tab, self.reviewing_tab, self.scheduled_tab, self.trash_tab, self.profile_tab]:
             tab.pack_forget()
         
         # 重置所有按鈕狀態
-        for btn in [self.btn_dispatch, self.btn_dispatched, self.btn_reviewing, self.btn_scheduled, self.btn_trash]:
+        for btn in [self.btn_dispatch, self.btn_dispatched, self.btn_reviewing, self.btn_scheduled, self.btn_trash, self.btn_profile]:
             btn.state(['!pressed'])
         
         # 顯示選中的標籤頁並設置按鈕狀態
@@ -212,6 +223,9 @@ class RequirementManager:
             self.trash_tab.pack(fill=tk.BOTH, expand=True)
             self.btn_trash.state(['pressed'])
             self.load_deleted_requirements()
+        elif tab_name == "profile":
+            self.profile_tab.pack(fill=tk.BOTH, expand=True)
+            self.btn_profile.state(['pressed'])
         
         self.current_tab = tab_name
         
@@ -700,8 +714,77 @@ class RequirementManager:
 
     def setup_staff_interface(self):
         """設置員工查看需求單介面"""
+        # 創建主容器
+        main_container = ttk.Frame(self.root)
+        main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # 左側按鈕區域
+        button_frame = ttk.Frame(main_container, padding=10)
+        button_frame.pack(side=tk.LEFT, fill=tk.Y)
+        
+        # 右側內容區域
+        self.content_frame = ttk.Frame(main_container, padding=10)
+        self.content_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        
+        # 創建垂直按鈕列表
+        self.current_tab = "requirements"  # 預設顯示需求單列表
+        
+        # 我的需求單按鈕
+        self.btn_requirements = ttk.Button(
+            button_frame, 
+            text="我的需求單", 
+            width=15,
+            command=lambda: self.switch_staff_tab("requirements")
+        )
+        self.btn_requirements.pack(pady=5, fill=tk.X)
+        
+        # 個人資料按鈕
+        self.btn_staff_profile = ttk.Button(
+            button_frame, 
+            text="個人資料", 
+            width=15,
+            command=lambda: self.switch_staff_tab("profile")
+        )
+        self.btn_staff_profile.pack(pady=5, fill=tk.X)
+        
+        # 創建標籤頁的內容框架
+        self.requirements_tab = ttk.Frame(self.content_frame)
+        self.staff_profile_tab = ttk.Frame(self.content_frame)
+        
+        # 設置標籤頁的內容
+        self.setup_requirements_tab(self.requirements_tab)
+        self.setup_profile_tab(self.staff_profile_tab)
+        
+        # 預設顯示需求單列表
+        self.switch_staff_tab("requirements")
+        
+        return main_container
+    
+    def switch_staff_tab(self, tab_name):
+        """切換員工界面標籤頁"""
+        # 隱藏所有標籤頁
+        for tab in [self.requirements_tab, self.staff_profile_tab]:
+            tab.pack_forget()
+        
+        # 重置所有按鈕狀態
+        for btn in [self.btn_requirements, self.btn_staff_profile]:
+            btn.state(['!pressed'])
+        
+        # 顯示選中的標籤頁並設置按鈕狀態
+        if tab_name == "requirements":
+            self.requirements_tab.pack(fill=tk.BOTH, expand=True)
+            self.btn_requirements.state(['pressed'])
+            self.load_user_requirements()
+        elif tab_name == "profile":
+            self.staff_profile_tab.pack(fill=tk.BOTH, expand=True)
+            self.btn_staff_profile.state(['pressed'])
+        
+        self.current_tab = tab_name
+    
+    def setup_requirements_tab(self, parent):
+        """設置需求單列表標籤頁"""
         # 需求單列表框架
-        self.staff_frame = ttk.LabelFrame(self.root, text="我收到的需求單", padding=10)
+        self.staff_frame = ttk.LabelFrame(parent, text="我收到的需求單", padding=10)
         self.staff_frame.pack(pady=10, fill=tk.BOTH, expand=True)
         
         # 狀態過濾框架
@@ -783,8 +866,6 @@ class RequirementManager:
             text="刷新列表",
             command=self.load_user_requirements
         ).pack(side=tk.RIGHT, padx=5)
-        
-        return self.staff_frame
     
     def load_user_requirements(self):
         """載入用戶收到的需求單到列表"""
@@ -1813,6 +1894,88 @@ class RequirementManager:
         
         # 載入已刪除的需求單
         self.load_deleted_requirements()
+    
+    def setup_profile_tab(self, parent):
+        """設置個人資料標籤頁"""
+        # 創建主框架
+        profile_frame = ttk.Frame(parent, padding=20)
+        profile_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # 個人資料標題
+        title_label = ttk.Label(profile_frame, text="個人資料", font=('Arial', 16, 'bold'))
+        title_label.pack(pady=(0, 30))
+        
+        # 使用者資訊區域
+        info_frame = ttk.LabelFrame(profile_frame, text="使用者資訊", padding=20)
+        info_frame.pack(fill=tk.X, pady=(0, 20))
+        
+        # 使用者資訊標籤 - 使用網格佈局
+        info_grid = ttk.Frame(info_frame)
+        info_grid.pack(fill=tk.X)
+        
+        # 使用者名稱
+        ttk.Label(info_grid, text="使用者名稱:", font=('Arial', 10, 'bold')).grid(row=0, column=0, sticky=tk.W, pady=5, padx=(0, 10))
+        self.profile_username_label = ttk.Label(info_grid, text="", font=('Arial', 10))
+        self.profile_username_label.grid(row=0, column=1, sticky=tk.W, pady=5)
+        
+        # 姓名
+        ttk.Label(info_grid, text="姓名:", font=('Arial', 10, 'bold')).grid(row=1, column=0, sticky=tk.W, pady=5, padx=(0, 10))
+        self.profile_name_label = ttk.Label(info_grid, text="", font=('Arial', 10))
+        self.profile_name_label.grid(row=1, column=1, sticky=tk.W, pady=5)
+        
+        # 電子郵件
+        ttk.Label(info_grid, text="電子郵件:", font=('Arial', 10, 'bold')).grid(row=2, column=0, sticky=tk.W, pady=5, padx=(0, 10))
+        self.profile_email_label = ttk.Label(info_grid, text="", font=('Arial', 10))
+        self.profile_email_label.grid(row=2, column=1, sticky=tk.W, pady=5)
+        
+        # 角色
+        ttk.Label(info_grid, text="角色:", font=('Arial', 10, 'bold')).grid(row=3, column=0, sticky=tk.W, pady=5, padx=(0, 10))
+        self.profile_role_label = ttk.Label(info_grid, text="", font=('Arial', 10))
+        self.profile_role_label.grid(row=3, column=1, sticky=tk.W, pady=5)
+        
+        # 分隔線
+        separator = ttk.Separator(profile_frame, orient='horizontal')
+        separator.pack(fill=tk.X, pady=20)
+        
+        # 操作區域
+        action_frame = ttk.LabelFrame(profile_frame, text="操作", padding=20)
+        action_frame.pack(fill=tk.X)
+        
+        # 登出按鈕
+        logout_button = ttk.Button(
+            action_frame, 
+            text="登出系統", 
+            width=15,
+            command=self.perform_logout
+        )
+        logout_button.pack(pady=10)
+        
+        # 更新個人資料顯示
+        self.update_profile_display()
+    
+    def update_profile_display(self):
+        """更新個人資料顯示"""
+        if hasattr(self.current_user, 'username'):
+            self.profile_username_label.config(text=self.current_user.username)
+        if hasattr(self.current_user, 'name'):
+            self.profile_name_label.config(text=self.current_user.name)
+        if hasattr(self.current_user, 'email'):
+            self.profile_email_label.config(text=self.current_user.email)
+        if hasattr(self.current_user, 'role'):
+            role_text = "系統管理員" if self.current_user.role == 'admin' else "一般員工"
+            self.profile_role_label.config(text=role_text)
+    
+    def perform_logout(self):
+        """執行登出操作"""
+        # 導入main模組中的登出函數
+        try:
+            import main
+            main.perform_logout()
+        except Exception as e:
+            print(f"登出時發生錯誤: {e}")
+            # 如果無法調用main的登出函數，顯示錯誤訊息
+            from tkinter import messagebox
+            messagebox.showerror("錯誤", "登出功能暫時無法使用，請關閉程式重新登入")
 
     def load_deleted_requirements(self):
         """載入已刪除的需求單"""
