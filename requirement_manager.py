@@ -103,46 +103,117 @@ class RequirementManager:
     
     def setup_admin_interface(self):
         """設置管理員派發需求單介面"""
-        # 創建選項卡控件
-        self.admin_notebook = ttk.Notebook(self.root)
-        self.admin_notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        # 創建主容器
+        main_container = ttk.Frame(self.root)
+        main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # 創建發派需求單標籤頁
-        dispatch_tab = ttk.Frame(self.admin_notebook)
-        self.admin_notebook.add(dispatch_tab, text="發派需求單")
+        # 左側按鈕區域
+        button_frame = ttk.Frame(main_container, padding=10)
+        button_frame.pack(side=tk.LEFT, fill=tk.Y)
         
-        # 創建已發派需求單標籤頁
-        dispatched_tab = ttk.Frame(self.admin_notebook)
-        self.admin_notebook.add(dispatched_tab, text="已發派需求單")
+        # 右側內容區域
+        self.content_frame = ttk.Frame(main_container, padding=10)
+        self.content_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
         
-        # 創建待審核需求單標籤頁
-        reviewing_tab = ttk.Frame(self.admin_notebook)
-        self.admin_notebook.add(reviewing_tab, text="待審核需求單")
+        # 創建垂直按鈕列表
+        self.current_tab = "dispatch"  # 預設顯示發派需求單
         
-        # 創建預約發派需求單標籤頁
-        scheduled_tab = ttk.Frame(self.admin_notebook)
-        self.admin_notebook.add(scheduled_tab, text="預約發派需求單")
+        # 發派需求單按鈕
+        self.btn_dispatch = ttk.Button(
+            button_frame, 
+            text="發派需求單", 
+            width=15,
+            command=lambda: self.switch_tab("dispatch")
+        )
+        self.btn_dispatch.pack(pady=5, fill=tk.X)
         
-        # 創建垃圾桶標籤頁
-        trash_tab = ttk.Frame(self.admin_notebook)
-        self.admin_notebook.add(trash_tab, text="垃圾桶")
+        # 已發派需求單按鈕
+        self.btn_dispatched = ttk.Button(
+            button_frame, 
+            text="已發派需求單", 
+            width=15,
+            command=lambda: self.switch_tab("dispatched")
+        )
+        self.btn_dispatched.pack(pady=5, fill=tk.X)
         
-        # 設置發派界面
-        self.setup_dispatch_tab(dispatch_tab)
+        # 待審核需求單按鈕
+        self.btn_reviewing = ttk.Button(
+            button_frame, 
+            text="待審核需求單", 
+            width=15,
+            command=lambda: self.switch_tab("reviewing")
+        )
+        self.btn_reviewing.pack(pady=5, fill=tk.X)
         
-        # 設置已發派需求單界面
-        self.setup_dispatched_tab(dispatched_tab)
+        # 預約發派需求單按鈕
+        self.btn_scheduled = ttk.Button(
+            button_frame, 
+            text="預約發派需求單", 
+            width=15,
+            command=lambda: self.switch_tab("scheduled")
+        )
+        self.btn_scheduled.pack(pady=5, fill=tk.X)
         
-        # 設置待審核需求單界面
-        self.setup_reviewing_tab(reviewing_tab)
+        # 垃圾桶按鈕
+        self.btn_trash = ttk.Button(
+            button_frame, 
+            text="垃圾桶", 
+            width=15,
+            command=lambda: self.switch_tab("trash")
+        )
+        self.btn_trash.pack(pady=5, fill=tk.X)
         
-        # 設置預約發派需求單界面
-        self.setup_scheduled_tab(scheduled_tab)
+        # 創建各個標籤頁的內容框架
+        self.dispatch_tab = ttk.Frame(self.content_frame)
+        self.dispatched_tab = ttk.Frame(self.content_frame)
+        self.reviewing_tab = ttk.Frame(self.content_frame)
+        self.scheduled_tab = ttk.Frame(self.content_frame)
+        self.trash_tab = ttk.Frame(self.content_frame)
         
-        # 設置垃圾桶界面
-        self.setup_trash_tab(trash_tab)
+        # 設置各個標籤頁的內容
+        self.setup_dispatch_tab(self.dispatch_tab)
+        self.setup_dispatched_tab(self.dispatched_tab)
+        self.setup_reviewing_tab(self.reviewing_tab)
+        self.setup_scheduled_tab(self.scheduled_tab)
+        self.setup_trash_tab(self.trash_tab)
         
-        return self.admin_notebook
+        # 預設顯示發派需求單
+        self.switch_tab("dispatch")
+        
+        return main_container
+    
+    def switch_tab(self, tab_name):
+        """切換標籤頁"""
+        # 隱藏所有標籤頁
+        for tab in [self.dispatch_tab, self.dispatched_tab, self.reviewing_tab, self.scheduled_tab, self.trash_tab]:
+            tab.pack_forget()
+        
+        # 重置所有按鈕狀態
+        for btn in [self.btn_dispatch, self.btn_dispatched, self.btn_reviewing, self.btn_scheduled, self.btn_trash]:
+            btn.state(['!pressed'])
+        
+        # 顯示選中的標籤頁並設置按鈕狀態
+        if tab_name == "dispatch":
+            self.dispatch_tab.pack(fill=tk.BOTH, expand=True)
+            self.btn_dispatch.state(['pressed'])
+        elif tab_name == "dispatched":
+            self.dispatched_tab.pack(fill=tk.BOTH, expand=True)
+            self.btn_dispatched.state(['pressed'])
+            self.load_admin_dispatched_requirements()
+        elif tab_name == "reviewing":
+            self.reviewing_tab.pack(fill=tk.BOTH, expand=True)
+            self.btn_reviewing.state(['pressed'])
+            self.load_admin_reviewing_requirements()
+        elif tab_name == "scheduled":
+            self.scheduled_tab.pack(fill=tk.BOTH, expand=True)
+            self.btn_scheduled.state(['pressed'])
+            self.load_admin_scheduled_requirements()
+        elif tab_name == "trash":
+            self.trash_tab.pack(fill=tk.BOTH, expand=True)
+            self.btn_trash.state(['pressed'])
+            self.load_deleted_requirements()
+        
+        self.current_tab = tab_name
         
     def setup_dispatch_tab(self, parent):
         """設置發派需求單標籤頁"""

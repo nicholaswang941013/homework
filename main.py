@@ -183,7 +183,7 @@ button_register.pack(side=tk.LEFT)
 # 主要內容區域 (登入後顯示)
 frame_main = ttk.Frame(root)
 
-# 左側功能區域
+# 左側功能區域 - 這裡會放置需求管理系統的功能界面
 frame_left = ttk.Frame(frame_main, padding=10)
 frame_left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -202,29 +202,25 @@ info_frame = ttk.Frame(frame_right)
 info_frame.pack(fill=tk.X, pady=(0, 20))
 
 # 使用者資訊標籤
-label_info_username = ttk.Label(info_frame, text="", font=('Arial', 10), wraplength=200)
-label_info_username.pack(pady=5, anchor=tk.W)
+label_info_username = ttk.Label(info_frame, text="", font=('Arial', 10), anchor=tk.W)
+label_info_username.pack(fill=tk.X, pady=3)
 
-label_info_name = ttk.Label(info_frame, text="", font=('Arial', 10), wraplength=200)
-label_info_name.pack(pady=5, anchor=tk.W)
+label_info_name = ttk.Label(info_frame, text="", font=('Arial', 10), anchor=tk.W)
+label_info_name.pack(fill=tk.X, pady=3)
 
-label_info_email = ttk.Label(info_frame, text="", font=('Arial', 10), wraplength=200)
-label_info_email.pack(pady=5, anchor=tk.W)
+label_info_email = ttk.Label(info_frame, text="", font=('Arial', 10), anchor=tk.W)
+label_info_email.pack(fill=tk.X, pady=3)
 
-label_info_role = ttk.Label(info_frame, text="", font=('Arial', 10), wraplength=200)
-label_info_role.pack(pady=5, anchor=tk.W)
+label_info_role = ttk.Label(info_frame, text="", font=('Arial', 10), anchor=tk.W)
+label_info_role.pack(fill=tk.X, pady=3)
 
 # 分隔線
 separator = ttk.Separator(frame_right, orient='horizontal')
-separator.pack(fill=tk.X, pady=20)
-
-# 按鈕區域
-button_frame = ttk.Frame(frame_right)
-button_frame.pack(fill=tk.X)
+separator.pack(fill=tk.X, pady=15)
 
 # 登出按鈕
-button_logout = ttk.Button(button_frame, text="登出", width=18)
-button_logout.pack(pady=10)
+button_logout = ttk.Button(frame_right, text="登出", width=15)
+button_logout.pack(pady=5)
 
 
 class RequirementApp:
@@ -242,7 +238,7 @@ class RequirementApp:
 
     def setup_admin_interface(self):
         """系統管理員界面"""
-        # 使用需求單管理器設置界面，將其放在左側區域
+        # 使用需求單管理器設置界面，將界面放在左側區域
         self.requirement_manager = RequirementManager(frame_left, self.current_user)
         self.admin_frame = self.requirement_manager.setup_admin_interface()
 
@@ -255,7 +251,7 @@ class RequirementApp:
             
         print(f"設置員工界面，用戶ID: {self.current_user.id}, 用戶名: {self.current_user.username}")
             
-        # 使用需求單管理器設置員工界面，將其放在左側區域
+        # 使用需求單管理器設置員工界面，將界面放在左側區域
         self.requirement_manager = RequirementManager(frame_left, self.current_user)
         self.staff_frame = self.requirement_manager.setup_staff_interface()
 
