@@ -9,7 +9,7 @@ def create_connection():
         conn = sqlite3.connect('users.db')
         return conn
     except Error as e:
-        print(e)
+        print(f"建立資料庫連接時發生錯誤: {e}")
     return conn
 
 def get_user_by_username(conn, username):
@@ -31,27 +31,7 @@ def create_tables(conn):
                         role TEXT NOT NULL DEFAULT 'staff'
                     );''')
 
-        # 需求單表格 - 檢查是否需要重建表格
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA table_info(requirements)")
-        columns = cursor.fetchall()
-        columns_dict = {col[1]: col for col in columns}
-        
-        # 如果缺少必要欄位，則嘗試添加它們
-        if 'comment' not in columns_dict or 'completed_at' not in columns_dict or 'is_deleted' not in columns_dict:
-            try:
-                if 'comment' not in columns_dict:
-                    conn.execute("ALTER TABLE requirements ADD COLUMN comment TEXT")
-                if 'completed_at' not in columns_dict:
-                    conn.execute("ALTER TABLE requirements ADD COLUMN completed_at TIMESTAMP")
-                if 'is_deleted' not in columns_dict:
-                    conn.execute("ALTER TABLE requirements ADD COLUMN is_deleted INTEGER DEFAULT 0")
-                conn.commit()
-                print("需求單表格結構已更新")
-            except Error as e:
-                print(f"添加欄位時發生錯誤: {e}")
-        
-        # 確保需求單表格存在
+        # 需求單表格
         conn.execute('''CREATE TABLE IF NOT EXISTS requirements (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         title TEXT NOT NULL,
@@ -62,71 +42,81 @@ def create_tables(conn):
                         priority TEXT NOT NULL DEFAULT 'normal',
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         scheduled_time TIMESTAMP,
-                        is_dispatched INTEGER DEFAULT 1,
+                        is_dispatched INTEGER DEFAULT 1, -- 0 for scheduled, 1 for dispatched
                         completed_at TIMESTAMP,
                         comment TEXT,
-                        is_deleted INTEGER DEFAULT 0,
+                        attachment_path TEXT,          -- New field for attachment
+                        is_deleted INTEGER DEFAULT 0,    -- 0 for not deleted, 1 for deleted
                         deleted_at TIMESTAMP,
                         FOREIGN KEY (assigner_id) REFERENCES users (id),
                         FOREIGN KEY (assignee_id) REFERENCES users (id)
                     );''')
+        
+        # 檢查並添加欄位 (確保兼容舊資料庫)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(requirements)")
+        columns = {col[1]: col for col in cursor.fetchall()}
+
+        if 'comment' not in columns:
+            conn.execute("ALTER TABLE requirements ADD COLUMN comment TEXT")
+            print("已為 requirements 表添加 comment 欄位")
+        if 'completed_at' not in columns:
+            conn.execute("ALTER TABLE requirements ADD COLUMN completed_at TIMESTAMP")
+            print("已為 requirements 表添加 completed_at 欄位")
+        if 'is_deleted' not in columns:
+            conn.execute("ALTER TABLE requirements ADD COLUMN is_deleted INTEGER DEFAULT 0")
+            print("已為 requirements 表添加 is_deleted 欄位")
+        if 'deleted_at' not in columns:
+            conn.execute("ALTER TABLE requirements ADD COLUMN deleted_at TIMESTAMP")
+            print("已為 requirements 表添加 deleted_at 欄位")
+        if 'attachment_path' not in columns:
+            conn.execute("ALTER TABLE requirements ADD COLUMN attachment_path TEXT")
+            print("已為 requirements 表添加 attachment_path 欄位")
+            
+        conn.commit()
+
     except Error as e:
-        print(e)
+        print(f"建立或更新表格時發生錯誤: {e}")
 
 def initialize_database():
     """初始化資料庫"""
     conn = create_connection()
     if conn is not None:
-        create_tables(conn)
+        try:
+            create_tables(conn)
 
-        # 定義預設使用者
-        default_users = [
-            ('nicholas', 'nicholas941013', '王爺', 'yuxiangwang57@gmail.com', 'admin'),
-            ('user1', 'user123', '張三', 'user1@example.com', 'staff'),
-            ('staff1', 'staff123', '李四', 'staff1@example.com', 'staff'),
-            ('staff2', 'staff123', '王五', 'staff2@example.com', 'staff')
-        ]
-        
-        # 檢查每個使用者是否已存在，不存在則添加
-        cursor = conn.cursor()
-        for user in default_users:
-            username = user[0]
-            cursor.execute("SELECT COUNT(*) FROM users WHERE username=?", (username,))
-            if cursor.fetchone()[0] == 0:
-                cursor.execute(
-                    "INSERT INTO users (username, password, name, email, role) VALUES (?, ?, ?, ?, ?)",
-                    user
-                )
-                print(f"已添加預設使用者: {username}")
-        
-        conn.commit()
-        conn.close()
+            default_users = [
+                ('nicholas', 'nicholas941013', '王爺', 'yuxiangwang57@gmail.com', 'admin'),
+                ('user1', 'user123', '張三', 'user1@example.com', 'staff'),
+                ('staff1', 'staff123', '李四', 'staff1@example.com', 'staff'),
+                ('staff2', 'staff123', '王五', 'staff2@example.com', 'staff')
+            ]
+            
+            cursor = conn.cursor()
+            for user_data in default_users:
+                cursor.execute("SELECT COUNT(*) FROM users WHERE username=?", (user_data[0],))
+                if cursor.fetchone()[0] == 0:
+                    cursor.execute(
+                        "INSERT INTO users (username, password, name, email, role) VALUES (?, ?, ?, ?, ?)",
+                        user_data
+                    )
+                    print(f"已添加預設使用者: {user_data[0]}")
+            
+            conn.commit()
+        except Error as e:
+            print(f"初始化資料庫時發生錯誤: {e}")
+        finally:
+            conn.close()
 
 def add_user(username, password, name, email, role='staff'):
-    """添加新使用者
-    
-    Args:
-        username: 使用者名稱
-        password: 密碼
-        name: 真實姓名
-        email: 電子郵件
-        role: 角色 ('admin'或'staff')
-        
-    Returns:
-        bool: 操作是否成功
-    """
+    """添加新使用者"""
+    conn = create_connection()
+    if not conn: return False
     try:
-        conn = create_connection()
-        if conn is None:
-            return False
-            
         cursor = conn.cursor()
-        
-        # 先檢查使用者名稱是否已存在
         cursor.execute("SELECT COUNT(*) FROM users WHERE username = ?", (username,))
         if cursor.fetchone()[0] > 0:
             print(f"使用者名稱 '{username}' 已存在")
-            conn.close()
             return False
             
         cursor.execute(
@@ -134,49 +124,31 @@ def add_user(username, password, name, email, role='staff'):
             (username, password, name, email, role)
         )
         conn.commit()
-        user_id = cursor.lastrowid
-        conn.close()
-        
-        print(f"成功添加使用者 '{username}' (ID: {user_id})")
+        print(f"成功添加使用者 '{username}' (ID: {cursor.lastrowid})")
         return True
     except Error as e:
         print(f"添加使用者時發生錯誤: {e}")
         return False
+    finally:
+        if conn: conn.close()
 
-def create_requirement(conn, title, description, assigner_id, assignee_id, priority='normal', scheduled_time=None):
-    """建立新的需求單
-    
-    Args:
-        conn: 數據庫連接
-        title: 需求單標題
-        description: 需求單內容
-        assigner_id: 指派者ID
-        assignee_id: 接收者ID
-        priority: 優先級 ('normal'或'urgent')
-        scheduled_time: 預約發派時間，None表示立即發派
-    
-    Returns:
-        int: 新建需求單ID
-    """
+def create_requirement(conn, title, description, assigner_id, assignee_id, priority='normal', scheduled_time=None, attachment_path=None):
+    """建立新的需求單"""
     try:
         cursor = conn.cursor()
-        
-        # 判斷是否是預約發派
         is_dispatched = 0 if scheduled_time else 1
-        
-        # 設置狀態：未發派(not_dispatched)或未完成(pending)
         status = 'not_dispatched' if scheduled_time else 'pending'
         
         cursor.execute(
             """INSERT INTO requirements 
-               (title, description, assigner_id, assignee_id, priority, scheduled_time, is_dispatched, status) 
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (title, description, assigner_id, assignee_id, priority, scheduled_time, is_dispatched, status)
+               (title, description, assigner_id, assignee_id, priority, scheduled_time, is_dispatched, status, attachment_path) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (title, description, assigner_id, assignee_id, priority, scheduled_time, is_dispatched, status, attachment_path)
         )
         conn.commit()
         return cursor.lastrowid
     except Error as e:
-        print(e)
+        print(f"建立需求單時發生錯誤: {e}")
         return None
 
 def get_all_staff(conn):
@@ -185,356 +157,288 @@ def get_all_staff(conn):
     cursor.execute("SELECT id, name FROM users WHERE role = 'staff'")
     return cursor.fetchall()
 
+# Helper to construct SELECT query for requirements for consistency
+def _get_requirement_select_fields():
+    return """
+        r.id, r.title, r.description, r.status, r.priority, r.created_at, 
+        assigner_user.name as assigner_name, assigner_user.id as assigner_id, 
+        assignee_user.name as assignee_name, assignee_user.id as assignee_id,
+        r.scheduled_time, r.comment, r.completed_at, r.attachment_path, r.deleted_at
+    """
+
+def _get_requirement_joins():
+    return """
+        JOIN users assigner_user ON r.assigner_id = assigner_user.id
+        JOIN users assignee_user ON r.assignee_id = assignee_user.id
+    """
+
 def get_user_requirements(conn, user_id):
-    """獲取指定用戶收到的需求單 (只顯示已發派的)"""
+    """獲取指定用戶收到的需求單 (只顯示已發派且未刪除的)"""
     try:
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT r.id, r.title, r.description, r.status, r.priority, r.created_at, u.name, r.scheduled_time, r.comment
+        sql = f'''
+            SELECT {_get_requirement_select_fields()}
             FROM requirements r
-            JOIN users u ON r.assigner_id = u.id
+            {_get_requirement_joins()}
             WHERE r.assignee_id = ? AND r.is_dispatched = 1 AND r.is_deleted = 0
             ORDER BY r.created_at DESC
-        ''', (user_id,))
+        '''
+        cursor.execute(sql, (user_id,))
         return cursor.fetchall()
     except Error as e:
-        print(e)
+        print(f"獲取使用者需求單時發生錯誤: {e}")
         return []
 
 def get_admin_dispatched_requirements(conn, admin_id):
-    """獲取管理員已發派的需求單"""
+    """獲取管理員已發派的需求單 (未刪除)"""
     try:
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT r.id, r.title, r.description, r.status, r.priority, r.created_at, 
-                   u.name as assignee_name, u.id as assignee_id, r.scheduled_time, r.comment, r.completed_at
+        sql = f'''
+            SELECT {_get_requirement_select_fields()}
             FROM requirements r
-            JOIN users u ON r.assignee_id = u.id
+            {_get_requirement_joins()}
             WHERE r.assigner_id = ? AND r.is_dispatched = 1 AND r.is_deleted = 0
             ORDER BY r.created_at DESC
-        ''', (admin_id,))
+        '''
+        cursor.execute(sql, (admin_id,))
         return cursor.fetchall()
     except Error as e:
-        print(e)
+        print(f"獲取管理員已發派需求單時發生錯誤: {e}")
         return []
 
 def get_admin_requirements_by_staff(conn, admin_id, staff_id):
-    """獲取管理員發派給特定員工的需求單
-    
-    Args:
-        conn: 數據庫連接
-        admin_id: 管理員ID
-        staff_id: 員工ID
-        
-    Returns:
-        list: 需求單列表
-    """
+    """獲取管理員發派給特定員工的需求單 (已發派且未刪除)"""
     try:
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT r.id, r.title, r.description, r.status, r.priority, r.created_at, 
-                   u.name as assignee_name, u.id as assignee_id, r.scheduled_time, r.comment, r.completed_at
+        sql = f'''
+            SELECT {_get_requirement_select_fields()}
             FROM requirements r
-            JOIN users u ON r.assignee_id = u.id
+            {_get_requirement_joins()}
             WHERE r.assigner_id = ? AND r.assignee_id = ? AND r.is_dispatched = 1 AND r.is_deleted = 0
             ORDER BY r.created_at DESC
-        ''', (admin_id, staff_id))
+        '''
+        cursor.execute(sql, (admin_id, staff_id))
         return cursor.fetchall()
     except Error as e:
-        print(e)
+        print(f"依員工篩選管理員需求單時發生錯誤: {e}")
         return []
 
 def get_admin_scheduled_requirements(conn, admin_id):
-    """獲取管理員預約發派的需求單（未發派）"""
+    """獲取管理員預約發派的需求單 (未發派且未刪除)"""
     try:
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT r.id, r.title, r.description, r.priority, r.scheduled_time, 
-                   u.name as assignee_name, u.id as assignee_id
+        sql = f'''
+            SELECT {_get_requirement_select_fields()}
             FROM requirements r
-            JOIN users u ON r.assignee_id = u.id
-            WHERE r.assigner_id = ? AND r.is_dispatched = 0
+            {_get_requirement_joins()}
+            WHERE r.assigner_id = ? AND r.is_dispatched = 0 AND r.is_deleted = 0
             ORDER BY r.scheduled_time ASC
-        ''', (admin_id,))
+        '''
+        cursor.execute(sql, (admin_id,))
         return cursor.fetchall()
     except Error as e:
-        print(e)
+        print(f"獲取管理員預約需求單時發生錯誤: {e}")
         return []
 
 def get_admin_scheduled_by_staff(conn, admin_id, staff_id):
-    """獲取管理員發派給特定員工的預約需求單（未發派）
-    
-    Args:
-        conn: 數據庫連接
-        admin_id: 管理員ID
-        staff_id: 員工ID
-        
-    Returns:
-        list: 需求單列表
-    """
+    """獲取管理員預約給特定員工的需求單 (未發派且未刪除)"""
     try:
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT r.id, r.title, r.description, r.priority, r.scheduled_time, 
-                   u.name as assignee_name, u.id as assignee_id
+        sql = f'''
+            SELECT {_get_requirement_select_fields()}
             FROM requirements r
-            JOIN users u ON r.assignee_id = u.id
-            WHERE r.assigner_id = ? AND r.assignee_id = ? AND r.is_dispatched = 0
+            {_get_requirement_joins()}
+            WHERE r.assigner_id = ? AND r.assignee_id = ? AND r.is_dispatched = 0 AND r.is_deleted = 0
             ORDER BY r.scheduled_time ASC
-        ''', (admin_id, staff_id))
+        '''
+        cursor.execute(sql, (admin_id, staff_id))
         return cursor.fetchall()
     except Error as e:
-        print(e)
+        print(f"依員工篩選管理員預約需求單時發生錯誤: {e}")
         return []
 
 def dispatch_scheduled_requirements(conn):
     """檢查並發派到期的預約需求單"""
     try:
-        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        current_time_dt = datetime.datetime.now()
+        current_time_str = current_time_dt.strftime("%Y-%m-%d %H:%M:%S")
         cursor = conn.cursor()
         
-        # 獲取所有應該發派的需求單
         cursor.execute('''
             SELECT id FROM requirements 
-            WHERE is_dispatched = 0 AND scheduled_time <= ?
-        ''', (current_time,))
+            WHERE is_dispatched = 0 AND scheduled_time <= ? AND is_deleted = 0
+        ''', (current_time_str,))
         
         req_ids = [row[0] for row in cursor.fetchall()]
         
-        # 更新狀態為已發派，並將created_at設為當前時間
         if req_ids:
             for req_id in req_ids:
                 cursor.execute('''
                     UPDATE requirements 
                     SET is_dispatched = 1, created_at = ?, status = 'pending'
                     WHERE id = ?
-                ''', (current_time, req_id))
-            
+                ''', (current_time_str, req_id)) # Use current_time_str for created_at when dispatched
             conn.commit()
             return len(req_ids)
-        
         return 0
     except Error as e:
-        print(e)
+        print(f"自動發派預約需求單時發生錯誤: {e}")
         return 0
 
 def cancel_scheduled_requirement(conn, req_id):
-    """取消預約發派的需求單"""
+    """取消預約發派的需求單 (軟刪除)"""
     try:
         cursor = conn.cursor()
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Instead of deleting, mark as deleted and set status to 'cancelled' or similar
+        # For now, just soft delete as per existing delete_requirement logic
         cursor.execute('''
-            DELETE FROM requirements 
-            WHERE id = ? AND is_dispatched = 0
-        ''', (req_id,))
+            UPDATE requirements
+            SET is_deleted = 1, deleted_at = ?, status = 'cancelled' 
+            WHERE id = ? AND is_dispatched = 0 AND is_deleted = 0
+        ''', (current_time, req_id))
         conn.commit()
         return cursor.rowcount > 0
     except Error as e:
-        print(e)
+        print(f"取消預約需求單時發生錯誤: {e}")
         return False
 
-def submit_requirement(conn, req_id, comment):
-    """員工提交需求單完成情況
-    
-    Args:
-        conn: 數據庫連接
-        req_id: 需求單ID
-        comment: 員工完成情況說明
-        
-    Returns:
-        bool: 操作是否成功
-    """
+def submit_requirement(conn, req_id, comment, attachment_path=None):
+    """員工提交需求單完成情況"""
     try:
         cursor = conn.cursor()
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        cursor.execute('''
-            UPDATE requirements
-            SET status = 'reviewing', comment = ?, completed_at = ?
-            WHERE id = ? AND status = 'pending'
-        ''', (comment, current_time, req_id))
-        
+        if attachment_path:
+            cursor.execute('''
+                UPDATE requirements
+                SET status = 'reviewing', comment = ?, completed_at = ?, attachment_path = ?
+                WHERE id = ? AND status = 'pending' AND is_deleted = 0
+            ''', (comment, current_time, attachment_path, req_id))
+        else:
+            cursor.execute('''
+                UPDATE requirements
+                SET status = 'reviewing', comment = ?, completed_at = ?
+                WHERE id = ? AND status = 'pending' AND is_deleted = 0
+            ''', (comment, current_time, req_id))
+            
         conn.commit()
         return cursor.rowcount > 0
     except Error as e:
-        print(e)
+        print(f"提交需求單時發生錯誤: {e}")
         return False
 
 def approve_requirement(conn, req_id):
-    """管理員審核通過需求單
-    
-    Args:
-        conn: 數據庫連接
-        req_id: 需求單ID
-        
-    Returns:
-        bool: 操作是否成功
-    """
+    """管理員審核通過需求單"""
     try:
         cursor = conn.cursor()
-        
         cursor.execute('''
             UPDATE requirements
             SET status = 'completed'
-            WHERE id = ? AND status = 'reviewing'
+            WHERE id = ? AND status = 'reviewing' AND is_deleted = 0
         ''', (req_id,))
-        
         conn.commit()
         return cursor.rowcount > 0
     except Error as e:
-        print(e)
+        print(f"審核通過需求單時發生錯誤: {e}")
         return False
 
 def reject_requirement(conn, req_id):
-    """管理員拒絕需求單，將狀態改回未完成
-    
-    Args:
-        conn: 數據庫連接
-        req_id: 需求單ID
-        
-    Returns:
-        bool: 操作是否成功
-    """
+    """管理員拒絕需求單，將狀態改回未完成"""
     try:
         cursor = conn.cursor()
-        
+        # Clear previous comment and completion time when rejecting
         cursor.execute('''
             UPDATE requirements
-            SET status = 'pending', comment = NULL, completed_at = NULL
-            WHERE id = ? AND status = 'reviewing'
+            SET status = 'pending', comment = NULL, completed_at = NULL 
+            WHERE id = ? AND status = 'reviewing' AND is_deleted = 0
         ''', (req_id,))
-        
         conn.commit()
         return cursor.rowcount > 0
     except Error as e:
-        print(e)
+        print(f"退回需求單時發生錯誤: {e}")
         return False
 
 def invalidate_requirement(conn, req_id):
-    """使需求單失效
-    
-    Args:
-        conn: 數據庫連接
-        req_id: 需求單ID
-        
-    Returns:
-        bool: 操作是否成功
-    """
+    """使需求單失效"""
     try:
         cursor = conn.cursor()
-        
         cursor.execute('''
             UPDATE requirements
             SET status = 'invalid'
-            WHERE id = ?
+            WHERE id = ? AND is_deleted = 0
         ''', (req_id,))
-        
         conn.commit()
         return cursor.rowcount > 0
     except Error as e:
-        print(e)
-        return False
-
-def clear_all_requirements():
-    """清空所有需求單
-    
-    Returns:
-        bool: 操作是否成功
-    """
-    try:
-        conn = create_connection()
-        if conn is None:
-            print("無法連接到資料庫")
-            return False
-            
-        cursor = conn.cursor()
-        
-        # 獲取需求單數量
-        cursor.execute("SELECT COUNT(*) FROM requirements")
-        count = cursor.fetchone()[0]
-        
-        # 刪除所有需求單
-        cursor.execute("DELETE FROM requirements")
-        conn.commit()
-        
-        print(f"已清空資料庫中的 {count} 個需求單")
-        conn.close()
-        return True
-    except Error as e:
-        print(f"清空需求單時發生錯誤: {e}")
+        print(f"使需求單失效時發生錯誤: {e}")
         return False
 
 def delete_requirement(conn, req_id):
-    """刪除需求單（移到垃圾桶）
-    
-    Args:
-        conn: 數據庫連接
-        req_id: 需求單ID
-        
-    Returns:
-        bool: 操作是否成功
-    """
+    """刪除需求單（軟刪除）"""
     try:
         cursor = conn.cursor()
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
         cursor.execute('''
             UPDATE requirements
             SET is_deleted = 1, deleted_at = ?
             WHERE id = ? AND is_deleted = 0
         ''', (current_time, req_id))
-        
         conn.commit()
         return cursor.rowcount > 0
     except Error as e:
-        print(e)
+        print(f"刪除需求單時發生錯誤: {e}")
         return False
 
 def restore_requirement(conn, req_id):
-    """恢復已刪除的需求單
-    
-    Args:
-        conn: 數據庫連接
-        req_id: 需求單ID
-        
-    Returns:
-        bool: 操作是否成功
-    """
+    """恢復已刪除的需求單"""
     try:
         cursor = conn.cursor()
-        
+        # Determine a sensible status upon restoration
+        # If it was 'cancelled', maybe it goes back to 'not_dispatched' if scheduled_time is in future, or 'pending'
+        # For now, a simple approach: set to 'pending' if it was soft-deleted.
+        # Consider more nuanced logic if needed, e.g., checking scheduled_time.
         cursor.execute('''
             UPDATE requirements
-            SET is_deleted = 0, deleted_at = NULL
+            SET is_deleted = 0, deleted_at = NULL, status = 
+                CASE 
+                    WHEN scheduled_time IS NOT NULL AND is_dispatched = 0 THEN 'not_dispatched'
+                    ELSE 'pending'
+                END
             WHERE id = ? AND is_deleted = 1
         ''', (req_id,))
-        
         conn.commit()
         return cursor.rowcount > 0
     except Error as e:
-        print(e)
+        print(f"恢復需求單時發生錯誤: {e}")
         return False
 
 def get_deleted_requirements(conn, admin_id):
-    """獲取管理員已刪除的需求單
-    
-    Args:
-        conn: 數據庫連接
-        admin_id: 管理員ID
-        
-    Returns:
-        list: 刪除的需求單列表
-    """
+    """獲取管理員已刪除的需求單"""
     try:
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT r.id, r.title, r.description, r.status, r.priority, r.created_at, 
-                   u.name as assignee_name, u.id as assignee_id, r.deleted_at, r.comment
+        sql = f'''
+            SELECT {_get_requirement_select_fields()}
             FROM requirements r
-            JOIN users u ON r.assignee_id = u.id
+            {_get_requirement_joins()}
             WHERE r.assigner_id = ? AND r.is_deleted = 1
             ORDER BY r.deleted_at DESC
-        ''', (admin_id,))
+        '''
+        cursor.execute(sql, (admin_id,))
         return cursor.fetchall()
     except Error as e:
-        print(e)
-        return [] 
+        print(f"獲取已刪除需求單時發生錯誤: {e}")
+        return []
+
+# Example of how to clear all requirements (for testing, use with caution)
+def clear_all_requirements_DANGEROUS(conn):
+    """(危險操作) 清空所有需求單"""
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM requirements")
+        conn.commit()
+        print(f"已清空資料庫中的所有需求單")
+        return True
+    except Error as e:
+        print(f"清空需求單時發生錯誤: {e}")
+        return False 
