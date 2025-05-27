@@ -255,6 +255,11 @@ current_app = None
 
 
 def perform_login():
+    global current_app
+    if current_app:
+        # 如果已經登入，則不執行任何操作
+        return
+    
     username = entry_username.get()
     password = entry_password.get()
 
@@ -278,7 +283,6 @@ def perform_login():
         frame_main.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         # 初始化主應用程式
-        global current_app
         current_app = RequirementApp(root, user)
     else:
         messagebox.showerror("登入失敗", result["message"])
