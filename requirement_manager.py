@@ -1,5 +1,6 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
+import shutil
 from database import (create_connection, get_all_staff, create_requirement, 
                     get_user_requirements, get_admin_dispatched_requirements,
                     get_admin_scheduled_requirements, dispatch_scheduled_requirements,
@@ -10,6 +11,7 @@ from database import (create_connection, get_all_staff, create_requirement,
 import datetime
 import threading
 import time
+import os
 
 
 class RequirementManager:
@@ -52,6 +54,14 @@ class RequirementManager:
         
         # 追蹤打開的 Toplevel 視窗
         self.open_windows = []
+        
+        # 附件路徑變數 (for dispatch tab)
+        self.attachment_path_var = tk.StringVar()
+        self.selected_attachment_source_path = None
+
+        # 附件路徑變數 (for submit dialog)
+        self.submit_attachment_path_var = tk.StringVar()
+        self.selected_submit_attachment_source_path = None
         
         # 不再需要啟動定時任務，因為已經移到全局範圍
         # self.scheduler_running = False
@@ -394,12 +404,26 @@ class RequirementManager:
         
         ttk.Label(time_frame, text="分").pack(side=tk.LEFT)
 
-        # 派發按鈕
+        # 附件選擇 (New - Row 6)
+        ttk.Label(self.admin_frame, text="附件:").grid(row=6, column=0, sticky=tk.W, pady=5)
+        attachment_frame = ttk.Frame(self.admin_frame)
+        attachment_frame.grid(row=6, column=1, sticky=tk.W+tk.E, pady=5)
+
+        ttk.Button(
+            attachment_frame,
+            text="選擇檔案",
+            command=self.select_dispatch_attachment
+        ).pack(side=tk.LEFT, padx=(0, 5))
+
+        self.attachment_display_label = ttk.Label(attachment_frame, textvariable=self.attachment_path_var, wraplength=250)
+        self.attachment_display_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        # 派發按鈕 (Adjusted - Row 7, previously Row 6)
         ttk.Button(
             self.admin_frame,
             text="派發需求單",
             command=self.create_requirement
-        ).grid(row=6, column=1, pady=10, sticky=tk.E)
+        ).grid(row=7, column=1, pady=10, sticky=tk.E) # Changed row from 6 to 7
         
     def setup_dispatched_tab(self, parent):
         """設置已發派需求單標籤頁"""
@@ -884,9 +908,7 @@ class RequirementManager:
         # 獲取狀態過濾條件
         status_filter = self.staff_status_filter_var.get()
         
-        # 如果沒有獲取到需求單，顯示提示信息
         if not requirements:
-            # 在樹狀視圖中插入一個空行，以便顯示提示信息
             empty_id = self.staff_req_treeview.insert("", tk.END, values=("", "目前沒有收到任何需求單", "", "", "", ""))
             self.staff_req_treeview.item(empty_id, tags=('empty',))
             self.staff_req_treeview.tag_configure('empty', foreground='gray')
@@ -894,26 +916,24 @@ class RequirementManager:
         
         # 添加數據到表格
         for req in requirements:
-            # 處理數據可能缺少欄位的情況
-            if len(req) >= 9:
-                req_id, title, desc, status, priority, created_at, assigner_name, scheduled_time, comment = req
-            else:
-                # 如果沒有comment欄位，創建默認值
-                req_id, title, desc, status, priority, created_at, assigner_name, scheduled_time = req
-                comment = None
+            if len(req) < 15:
+                print(f"警告: 員工需求單資料不完整，跳過: {req}")
+                continue
+
+            # Unpack all 15 fields from _get_requirement_select_fields
+            (req_id, title, description, status, priority, created_at, 
+             assigner_name, assigner_id, 
+             assignee_name, assignee_id, 
+             scheduled_time, comment, completed_at, attachment_path, deleted_at) = req
             
-            # 如果過濾條件不是"all"，則只顯示符合條件的需求單
             if status_filter != "all" and status != status_filter:
                 continue
                 
-            # 格式化狀態和緊急程度
             status_text = self.get_status_display_text(status)
             priority_text = "緊急" if priority == "urgent" else "普通"
             
-            # 如果日期是字符串，需要解析
             if isinstance(created_at, str):
                 try:
-                    # SQLite默認時間格式
                     date_obj = datetime.datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
                     date_text = date_obj.strftime("%Y-%m-%d %H:%M")
                 except ValueError:
@@ -921,13 +941,11 @@ class RequirementManager:
             else:
                 date_text = created_at
                 
-            # 插入數據
             item_id = self.staff_req_treeview.insert(
                 "", tk.END, 
                 values=(req_id, title, assigner_name, status_text, priority_text, date_text)
             )
             
-            # 根據狀態設置行顏色
             if status == 'reviewing':
                 self.staff_req_treeview.item(item_id, tags=('reviewing',))
             elif status == 'completed':
@@ -935,10 +953,7 @@ class RequirementManager:
             elif status == 'invalid':
                 self.staff_req_treeview.item(item_id, tags=('invalid',))
                 
-        # 設置標籤顏色
         self.staff_req_treeview.tag_configure('reviewing', background='#d4edff')
-        self.staff_req_treeview.tag_configure('completed', background='#e6ffe6')
-        self.staff_req_treeview.tag_configure('invalid', background='#f0f0f0')
 
     def show_requirement_details(self, event):
         """顯示需求單詳情"""
@@ -951,26 +966,32 @@ class RequirementManager:
         req_id = item['values'][0]
         
         # 獲取需求單詳情
-        requirements = self.execute_with_connection(get_user_requirements, self.user_id) or []
+        # IMPORTANT: Ensure get_user_requirements returns all fields from _get_requirement_select_fields
+        # Fields: id, title, desc, status, priority, created_at, 
+        #         assigner_name, assigner_id, assignee_name, assignee_id, 
+        #         scheduled_time, comment, completed_at, attachment_path, deleted_at
+        requirements_data = self.execute_with_connection(get_user_requirements, self.user_id) or []
         requirement = None
         
-        for req in requirements:
-            if req[0] == req_id:
-                requirement = req
+        for req_data in requirements_data:
+            if req_data[0] == req_id: # Compare by ID
+                requirement = req_data
                 break
         
         if not requirement:
+            messagebox.showerror("錯誤", f"找不到ID為 {req_id} 的需求單詳情。")
+            return
+
+        if len(requirement) < 14: # Should be 15 fields, attachment_path is 13, deleted_at is 14
+            messagebox.showerror("錯誤", "需求單資料不完整，無法顯示詳情 (欄位數量不足)。")
             return
             
-        # 顯示詳情對話框
-        # 處理數據可能缺少欄位的情況
-        if len(requirement) >= 9:
-            req_id, title, description, status, priority, created_at, assigner_name, scheduled_time, comment = requirement
-        else:
-            req_id, title, description, status, priority, created_at, assigner_name, scheduled_time = requirement
-            comment = None
+        # Unpack all 15 fields
+        (req_id, title, description, status, priority, created_at, 
+         assigner_name, assigner_id, assignee_name, assignee_id, 
+         scheduled_time, comment, completed_at, attachment_path, deleted_at) = requirement
         
-        detail_window = self.create_toplevel_window(f"需求單詳情 #{req_id}", "550x550")
+        detail_window = self.create_toplevel_window(f"需求單詳情 #{req_id}", "550x600") # Adjusted size for potential attachment
         
         # 標題
         ttk.Label(
@@ -1077,19 +1098,32 @@ class RequirementManager:
             comment_frame = ttk.Frame(detail_window)
             comment_frame.pack(fill=tk.X, padx=20, pady=5)
             
-            comment_text = tk.Text(comment_frame, wrap=tk.WORD, height=4)
-            comment_text.insert(tk.END, comment)
-            comment_text.config(state=tk.DISABLED)  # 設為只讀
+            comment_text_widget = tk.Text(comment_frame, wrap=tk.WORD, height=4) # Renamed to avoid conflict
+            comment_text_widget.insert(tk.END, comment)
+            comment_text_widget.config(state=tk.DISABLED)  # 設為只讀
             
-            comment_scroll = ttk.Scrollbar(comment_frame, command=comment_text.yview)
-            comment_text.configure(yscrollcommand=comment_scroll.set)
+            comment_scroll = ttk.Scrollbar(comment_frame, command=comment_text_widget.yview)
+            comment_text_widget.configure(yscrollcommand=comment_scroll.set)
             
             comment_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-            comment_text.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            comment_text_widget.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # 顯示附件 (New)
+        if attachment_path:
+            ttk.Label(detail_window, text="附件:", font=('Arial', 10, 'bold')).pack(pady=(10,0), padx=20, anchor=tk.W)
+            
+            attachment_display_frame = ttk.Frame(detail_window)
+            attachment_display_frame.pack(fill=tk.X, padx=20, pady=(0,5))
+
+            filename = os.path.basename(attachment_path)
+            attach_label = ttk.Label(attachment_display_frame, text=filename, foreground="blue", cursor="hand2")
+            attach_label.pack(side=tk.LEFT, padx=(0,10))
+            # Pass the relative path from DB directly to _open_attachment
+            attach_label.bind("<Button-1>", lambda e, ap=attachment_path: self._open_attachment(ap, detail_window))
         
         # 按鈕框架
         button_frame = ttk.Frame(detail_window)
-        button_frame.pack(fill=tk.X, pady=15)
+        button_frame.pack(fill=tk.X, pady=15, padx=20)
         
         # 左側按鈕框架
         left_button_frame = ttk.Frame(button_frame)
@@ -1117,6 +1151,16 @@ class RequirementManager:
         else:
             self.schedule_frame.grid_remove()
 
+    def select_dispatch_attachment(self):
+        """選擇需求單附件 (管理員發派時)"""
+        filepath = filedialog.askopenfilename()
+        if filepath:
+            self.selected_attachment_source_path = filepath
+            self.attachment_path_var.set(os.path.basename(filepath))
+        else:
+            self.selected_attachment_source_path = None
+            self.attachment_path_var.set("")
+
     def create_requirement(self):
         """建立新的需求單"""
         staff_str = self.staff_combobox.get()
@@ -1138,6 +1182,27 @@ class RequirementManager:
         if not title or not description:
             messagebox.showerror("錯誤", "標題和內容不能為空")
             return
+        
+        # 處理附件
+        attachment_db_path = None
+        if self.selected_attachment_source_path:
+            uploads_dir = "uploads"
+            os.makedirs(uploads_dir, exist_ok=True)
+            
+            original_filename = os.path.basename(self.selected_attachment_source_path)
+            filename_base, file_extension = os.path.splitext(original_filename)
+            timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f") 
+            unique_filename = f"{filename_base}_{timestamp}{file_extension}"
+            
+            destination_path = os.path.join(uploads_dir, unique_filename)
+            
+            try:
+                shutil.copy2(self.selected_attachment_source_path, destination_path)
+                attachment_db_path = destination_path 
+                print(f"附件已儲存到: {destination_path}")
+            except Exception as e:
+                messagebox.showerror("錯誤", f"複製附件失敗: {e}")
+                return
             
         # 處理預約發派邏輯
         scheduled_time = None
@@ -1170,7 +1235,8 @@ class RequirementManager:
             self.user_id,
             staff_id,
             priority,
-            scheduled_time
+            scheduled_time,
+            attachment_db_path
         )
 
         if req_id:
@@ -1180,6 +1246,9 @@ class RequirementManager:
                 message = f"需求單 #{req_id} (緊急程度: {priority_text}) 已設定於 {scheduled_time} 發派"
             else:
                 message = f"需求單 #{req_id} (緊急程度: {priority_text}) 已成功派發"
+            
+            if attachment_db_path:
+                message += f"\n附件: {os.path.basename(attachment_db_path)}"
                 
             messagebox.showinfo("成功", message)
             self.title_entry.delete(0, tk.END)
@@ -1187,6 +1256,9 @@ class RequirementManager:
             self.priority_var.set("normal")  # 重置為普通優先級
             self.dispatch_method_var.set("immediate")  # 重置為立即發派
             self.toggle_schedule_frame()  # 更新UI顯示
+            # 清空附件選擇
+            self.selected_attachment_source_path = None
+            self.attachment_path_var.set("")
         else:
             messagebox.showerror("錯誤", "派發需求單失敗")
 
@@ -1374,298 +1446,187 @@ class RequirementManager:
             
     def show_dispatched_details(self, event):
         """顯示已發派需求單詳情"""
-        # 獲取選中的項目
         selected_item = self.admin_dispatched_treeview.selection()
         if not selected_item:
             return
-            
         item = self.admin_dispatched_treeview.item(selected_item)
         req_id = item['values'][0]
         
-        # 獲取需求單詳情
-        requirements = self.execute_with_connection(get_admin_dispatched_requirements, self.user_id) or []
+        requirements_data = self.execute_with_connection(get_admin_dispatched_requirements, self.user_id) or []
         requirement = None
-        
-        for req in requirements:
-            if req[0] == req_id:
-                requirement = req
+        for req_data in requirements_data:
+            if req_data[0] == req_id:
+                requirement = req_data
                 break
         
         if not requirement:
+            messagebox.showerror("錯誤", f"找不到ID為 {req_id} 的需求單詳情。")
             return
-            
-        # 顯示詳情
-        try:
-            # 處理數據可能缺少欄位的情況
-            if len(requirement) >= 11:
-                req_id, title, description, status, priority, created_at, assignee_name, assignee_id, scheduled_time, comment, completed_at = requirement
-            elif len(requirement) >= 9:
-                req_id, title, description, status, priority, created_at, assignee_name, assignee_id, scheduled_time = requirement
-                comment = None
-                completed_at = None
-            else:
-                messagebox.showerror("錯誤", "需求單詳情不完整")
-                return
-        
-            # 轉換狀態和緊急程度為顯示文字
-            status_text = self.get_status_display_text(status)
-            priority_text = "緊急" if priority == "urgent" else "普通"
-        
-            # 創建詳情視窗
-            detail_window = self.create_toplevel_window(f"需求單詳情 #{req_id}", "600x500")
-            
-            # 標題
-            ttk.Label(
-                detail_window, 
-                text=title, 
-                font=('Arial', 14, 'bold')
-            ).pack(pady=(20, 10), padx=20, anchor=tk.W)
-            
-            # 詳情框架
-            details_frame = ttk.Frame(detail_window)
-            details_frame.pack(fill=tk.X, padx=20, pady=5)
-            
-            # 左側詳情
-            left_details = ttk.Frame(details_frame)
-            left_details.pack(side=tk.LEFT, fill=tk.X, expand=True)
-            
-            ttk.Label(
-                left_details, 
-                text=f"狀態: {status_text}", 
-                font=('Arial', 10)
-            ).pack(pady=2, anchor=tk.W)
-            
-            ttk.Label(
-                left_details, 
-                text=f"緊急程度: {priority_text}", 
-                font=('Arial', 10),
-                foreground="red" if priority == "urgent" else "black"
-            ).pack(pady=2, anchor=tk.W)
-            
-            ttk.Label(
-                left_details, 
-                text=f"發派時間: {created_at}", 
-                font=('Arial', 10)
-            ).pack(pady=2, anchor=tk.W)
-            
-            # 右側詳情
-            right_details = ttk.Frame(details_frame)
-            right_details.pack(side=tk.RIGHT, fill=tk.X, expand=True)
-            
-            ttk.Label(
-                right_details, 
-                text=f"指派給: {assignee_name}", 
-                font=('Arial', 10)
-            ).pack(pady=2, anchor=tk.W)
-            
-            if status in ["reviewing", "completed"]:
-                ttk.Label(
-                    right_details, 
-                    text=f"完成時間: {completed_at}", 
-                    font=('Arial', 10)
-                ).pack(pady=2, anchor=tk.W)
-            
-            # 分隔線
-            ttk.Separator(detail_window, orient='horizontal').pack(fill=tk.X, padx=20, pady=10)
-            
-            # 內容標題
-            ttk.Label(
-                detail_window, 
-                text="需求內容:", 
-                font=('Arial', 10, 'bold')
-            ).pack(pady=(5, 5), padx=20, anchor=tk.W)
-            
-            # 內容文本框
-            content_frame = ttk.Frame(detail_window)
-            content_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=5)
-            
-            content_text = tk.Text(content_frame, wrap=tk.WORD, height=8)
-            content_text.insert(tk.END, description)
-            content_text.config(state=tk.DISABLED)  # 設為只讀
-            
-            scrollbar = ttk.Scrollbar(content_frame, command=content_text.yview)
-            content_text.configure(yscrollcommand=scrollbar.set)
-            
-            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-            content_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-            
-            # 如果有完成情況說明，則顯示
-            if comment:
-                # 說明標題
-                ttk.Label(
-                    detail_window, 
-                    text="完成情況說明:", 
-                    font=('Arial', 10, 'bold')
-                ).pack(pady=(10, 5), padx=20, anchor=tk.W)
-                
-                # 說明文本框
-                comment_frame = ttk.Frame(detail_window)
-                comment_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=5)
-                
-                comment_text = tk.Text(comment_frame, wrap=tk.WORD, height=4)
-                comment_text.insert(tk.END, comment)
-                comment_text.config(state=tk.DISABLED)  # 設為只讀
-                
-                comment_scrollbar = ttk.Scrollbar(comment_frame, command=comment_text.yview)
-                comment_text.configure(yscrollcommand=comment_scrollbar.set)
-                
-                comment_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-                comment_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-            
-            # 按鈕框架
-            button_frame = ttk.Frame(detail_window)
-            button_frame.pack(fill=tk.X, pady=15, padx=20)
-            
-            # 左側按鈕 - 操作按鈕
-            left_button_frame = ttk.Frame(button_frame)
-            left_button_frame.pack(side=tk.LEFT, fill=tk.X)
-            
-            # 如果狀態是待審核，顯示審核和退回按鈕
-            if status == "reviewing":
-                ttk.Button(
-                    left_button_frame, 
-                    text="審核通過", 
-                    command=lambda: self.perform_approve_requirement(req_id, detail_window)
-                ).pack(side=tk.LEFT, padx=5)
-                
-                ttk.Button(
-                    left_button_frame, 
-                    text="退回修改", 
-                    command=lambda: self.perform_reject_requirement(req_id, detail_window)
-                ).pack(side=tk.LEFT, padx=5)
-            
-            # 如果狀態不是已失效，顯示設為失效按鈕
-            if status != "invalid":
-                ttk.Button(
-                    left_button_frame, 
-                    text="設為失效", 
-                    command=lambda: self.perform_invalidate_requirement(req_id, detail_window)
-                ).pack(side=tk.LEFT, padx=5)
-            
-            # 新增刪除按鈕，適用於所有狀態
-            ttk.Button(
-                left_button_frame, 
-                text="刪除需求單", 
-                command=lambda: self.perform_delete_requirement(req_id, detail_window)
-            ).pack(side=tk.LEFT, padx=5)
-            
-            # 右側按鈕 - 關閉按鈕
-            ttk.Button(
-                button_frame, 
-                text="關閉", 
-                command=detail_window.destroy
-            ).pack(side=tk.RIGHT)
-        except Exception as e:
-            messagebox.showerror("錯誤", f"顯示需求單詳情時發生錯誤: {e}")
-        
-    def show_scheduled_details(self, event):
-        """顯示預約發派需求單詳情"""
-        # 獲取選中的項目
-        selected_item = self.admin_scheduled_treeview.selection()
-        if not selected_item:
+
+        if len(requirement) < 15:
+            messagebox.showerror("錯誤", "需求單資料不完整 (欄位不足)。")
             return
-            
-        item = self.admin_scheduled_treeview.item(selected_item)
-        req_id = item['values'][0]
         
-        # 獲取需求單詳情
-        requirements = self.execute_with_connection(get_admin_scheduled_requirements, self.user_id) or []
-        requirement = None
+        (req_id, title, description, status, priority, created_at, 
+         assigner_name, assigner_id, assignee_name, assignee_id,
+         scheduled_time, comment, completed_at, attachment_path, deleted_at) = requirement
         
-        for req in requirements:
-            if req[0] == req_id:
-                requirement = req
-                break
+        status_text = self.get_status_display_text(status)
+        priority_text = "緊急" if priority == "urgent" else "普通"
+    
+        detail_window = self.create_toplevel_window(f"需求單詳情 #{req_id}", "600x600") # Adjusted size
         
-        if not requirement:
-            return
-            
-        # 顯示詳情
-        req_id, title, description, priority, scheduled_time, assignee_name, assignee_id = requirement
-        
-        # 創建詳情視窗
-        detail_window = self.create_toplevel_window(f"預約需求單詳情 #{req_id}", "550x550")
-        
-        # 標題
-        ttk.Label(
-            detail_window, 
-            text=title, 
-            font=('Arial', 14, 'bold')
-        ).pack(pady=(20, 10), padx=20, anchor=tk.W)
-        
-        # 詳情框架
+        ttk.Label(detail_window, text=title, font=('Arial', 14, 'bold')).pack(pady=(20, 10), padx=20, anchor=tk.W)
         details_frame = ttk.Frame(detail_window)
         details_frame.pack(fill=tk.X, padx=20, pady=5)
-        
-        # 左側詳情
         left_details = ttk.Frame(details_frame)
         left_details.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        
-        ttk.Label(
-            left_details, 
-            text=f"緊急程度: {priority}", 
-            font=('Arial', 10),
-            foreground="red" if priority == "緊急" else "black"
-        ).pack(pady=2, anchor=tk.W)
-        
-        ttk.Label(
-            left_details, 
-            text=f"預約發派時間: {scheduled_time}", 
-            font=('Arial', 10)
-        ).pack(pady=2, anchor=tk.W)
-        
-        # 右側詳情
+        ttk.Label(left_details, text=f"狀態: {status_text}", font=('Arial', 10)).pack(pady=2, anchor=tk.W)
+        ttk.Label(left_details, text=f"緊急程度: {priority_text}", font=('Arial', 10), foreground="red" if priority == "urgent" else "black").pack(pady=2, anchor=tk.W)
+        ttk.Label(left_details, text=f"發派時間: {created_at}", font=('Arial', 10)).pack(pady=2, anchor=tk.W)
         right_details = ttk.Frame(details_frame)
         right_details.pack(side=tk.RIGHT, fill=tk.X, expand=True)
+        ttk.Label(right_details, text=f"指派給: {assignee_name}", font=('Arial', 10)).pack(pady=2, anchor=tk.W)
+        if completed_at and status in ["reviewing", "completed"]: # Ensure completed_at is not None
+            ttk.Label(right_details, text=f"完成時間: {completed_at}", font=('Arial', 10)).pack(pady=2, anchor=tk.W)
         
-        ttk.Label(
-            right_details, 
-            text=f"指派給: {assignee_name}", 
-            font=('Arial', 10)
-        ).pack(pady=2, anchor=tk.W)
-        
-        # 分隔線
         ttk.Separator(detail_window, orient='horizontal').pack(fill=tk.X, padx=20, pady=10)
-        
-        # 內容標題
-        ttk.Label(
-            detail_window, 
-            text="需求內容:", 
-            font=('Arial', 10, 'bold')
-        ).pack(pady=(5, 5), padx=20, anchor=tk.W)
-        
-        # 內容文本框
+        ttk.Label(detail_window, text="需求內容:", font=('Arial', 10, 'bold')).pack(pady=(5, 5), padx=20, anchor=tk.W)
         content_frame = ttk.Frame(detail_window)
         content_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=5)
-        
-        content_text = tk.Text(content_frame, wrap=tk.WORD, height=8)
+        content_text = tk.Text(content_frame, wrap=tk.WORD, height=6) # Adjusted height
         content_text.insert(tk.END, description)
-        content_text.config(state=tk.DISABLED)  # 設為只讀
-        
+        content_text.config(state=tk.DISABLED)
         scrollbar = ttk.Scrollbar(content_frame, command=content_text.yview)
         content_text.configure(yscrollcommand=scrollbar.set)
-        
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         content_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
-        # 按鈕框架
+        if comment:
+            ttk.Label(detail_window, text="完成情況說明:", font=('Arial', 10, 'bold')).pack(pady=(10, 5), padx=20, anchor=tk.W)
+            comment_frame = ttk.Frame(detail_window)
+            comment_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=5) # Allow expansion
+            comment_text_widget = tk.Text(comment_frame, wrap=tk.WORD, height=3) # Adjusted height
+            comment_text_widget.insert(tk.END, comment)
+            comment_text_widget.config(state=tk.DISABLED)
+            comment_scrollbar = ttk.Scrollbar(comment_frame, command=comment_text_widget.yview)
+            comment_text_widget.configure(yscrollcommand=comment_scrollbar.set)
+            comment_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            comment_text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        if attachment_path:
+            ttk.Label(detail_window, text="附件:", font=('Arial', 10, 'bold')).pack(pady=(10,0), padx=20, anchor=tk.W)
+            attachment_display_frame = ttk.Frame(detail_window)
+            attachment_display_frame.pack(fill=tk.X, padx=20, pady=(0,5))
+            filename = os.path.basename(attachment_path)
+            attach_label = ttk.Label(attachment_display_frame, text=filename, foreground="blue", cursor="hand2")
+            attach_label.pack(side=tk.LEFT, padx=(0,10))
+            attach_label.bind("<Button-1>", lambda e, ap=attachment_path: self._open_attachment(ap, detail_window))
+        
         button_frame = ttk.Frame(detail_window)
         button_frame.pack(fill=tk.X, pady=15, padx=20)
+        left_button_frame = ttk.Frame(button_frame)
+        left_button_frame.pack(side=tk.LEFT, fill=tk.X)
+        if status == "reviewing":
+            ttk.Button(left_button_frame, text="審核通過", command=lambda: self.perform_approve_requirement(req_id, detail_window)).pack(side=tk.LEFT, padx=5)
+            ttk.Button(left_button_frame, text="退回修改", command=lambda: self.perform_reject_requirement(req_id, detail_window)).pack(side=tk.LEFT, padx=5)
+        if status != "invalid":
+            ttk.Button(left_button_frame, text="設為失效", command=lambda: self.perform_invalidate_requirement(req_id, detail_window)).pack(side=tk.LEFT, padx=5)
+        ttk.Button(left_button_frame, text="刪除需求單", command=lambda: self.perform_delete_requirement(req_id, detail_window)).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="關閉", command=detail_window.destroy).pack(side=tk.RIGHT)
         
-        # 左側按鈕 - 取消預約按鈕
-        ttk.Button(
-            button_frame, 
-            text="取消預約發派", 
-            command=lambda: self.perform_cancel_scheduled(req_id, detail_window)
-        ).pack(side=tk.LEFT, padx=5)
+    def show_scheduled_details(self, event):
+        """顯示預約發派需求單詳情"""
+        selected_item = self.admin_scheduled_treeview.selection()
+        if not selected_item:
+            return
+        item = self.admin_scheduled_treeview.item(selected_item)
+        req_id = item['values'][0]
         
-        # 右側按鈕 - 關閉按鈕
-        ttk.Button(
-            button_frame, 
-            text="關閉", 
-            command=detail_window.destroy
-        ).pack(side=tk.RIGHT)
+        requirements_data = self.execute_with_connection(get_admin_scheduled_requirements, self.user_id) or []
+        requirement = None
+        for req_data in requirements_data:
+            if req_data[0] == req_id:
+                requirement = req_data
+                break
         
+        if not requirement:
+            messagebox.showerror("錯誤", f"找不到ID為 {req_id} 的預約需求單詳情。")
+            return
+
+        if len(requirement) < 15: # Expect 15 fields
+            messagebox.showerror("錯誤", "預約需求單資料不完整 (欄位不足)。")
+            return
+            
+        (req_id, title, description, status, priority, created_at, 
+         assigner_name, assigner_id, assignee_name, assignee_id,
+         scheduled_time, comment, completed_at, attachment_path, deleted_at) = requirement
+        
+        priority_text = "緊急" if priority == "urgent" else "普通" # Use 'priority' not item['values'][3]
+
+        detail_window = self.create_toplevel_window(f"預約需求單詳情 #{req_id}", "600x550") # Adjusted size
+        
+        ttk.Label(detail_window, text=title, font=('Arial', 14, 'bold')).pack(pady=(20, 10), padx=20, anchor=tk.W)
+        details_frame = ttk.Frame(detail_window)
+        details_frame.pack(fill=tk.X, padx=20, pady=5)
+        left_details = ttk.Frame(details_frame)
+        left_details.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Label(left_details, text=f"緊急程度: {priority_text}", font=('Arial', 10), foreground="red" if priority == "urgent" else "black").pack(pady=2, anchor=tk.W)
+        # Display scheduled_time, as this is a scheduled requirement
+        if scheduled_time:
+             ttk.Label(left_details, text=f"預約發派時間: {scheduled_time}", font=('Arial', 10)).pack(pady=2, anchor=tk.W)
+        else: # Fallback if scheduled_time is somehow null for a scheduled item
+             ttk.Label(left_details, text=f"發派時間: {created_at}", font=('Arial', 10)).pack(pady=2, anchor=tk.W)
+
+
+        right_details = ttk.Frame(details_frame)
+        right_details.pack(side=tk.RIGHT, fill=tk.X, expand=True)
+        ttk.Label(right_details, text=f"指派給: {assignee_name}", font=('Arial', 10)).pack(pady=2, anchor=tk.W)
+        
+        ttk.Separator(detail_window, orient='horizontal').pack(fill=tk.X, padx=20, pady=10)
+        ttk.Label(detail_window, text="需求內容:", font=('Arial', 10, 'bold')).pack(pady=(5, 5), padx=20, anchor=tk.W)
+        content_frame = ttk.Frame(detail_window)
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=5)
+        content_text = tk.Text(content_frame, wrap=tk.WORD, height=8)
+        content_text.insert(tk.END, description)
+        content_text.config(state=tk.DISABLED)
+        scrollbar = ttk.Scrollbar(content_frame, command=content_text.yview)
+        content_text.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        content_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Comment and Completed_at are unlikely for not-yet-dispatched scheduled items, but show if present
+        if comment:
+            ttk.Label(detail_window, text="(預約時)備註/說明:", font=('Arial', 10, 'bold')).pack(pady=(10, 5), padx=20, anchor=tk.W)
+            comment_display_frame = ttk.Frame(detail_window)
+            comment_display_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=5)
+            comment_display_text = tk.Text(comment_display_frame, wrap=tk.WORD, height=3)
+            comment_display_text.insert(tk.END, comment)
+            comment_display_text.config(state=tk.DISABLED)
+            comment_display_scrollbar = ttk.Scrollbar(comment_display_frame, command=comment_display_text.yview)
+            comment_display_text.configure(yscrollcommand=comment_display_scrollbar.set)
+            comment_display_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            comment_display_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        if attachment_path: # From the initial unpacking
+            ttk.Label(detail_window, text="附件:", font=('Arial', 10, 'bold')).pack(pady=(10,0), padx=20, anchor=tk.W)
+            attachment_display_frame = ttk.Frame(detail_window)
+            attachment_display_frame.pack(fill=tk.X, padx=20, pady=(0,5))
+            filename = os.path.basename(attachment_path)
+            attach_label = ttk.Label(attachment_display_frame, text=filename, foreground="blue", cursor="hand2")
+            attach_label.pack(side=tk.LEFT, padx=(0,10))
+            attach_label.bind("<Button-1>", lambda e, ap=attachment_path: self._open_attachment(ap, detail_window))
+        
+        # Remove the old action_button_frame and its contents from show_scheduled_details
+        # It was adding approve/reject buttons which are not applicable here.
+        # Only "Cancel Scheduled" and "Close" are relevant.
+
+        button_frame = ttk.Frame(detail_window) # Re-create or use a new name for clarity
+        button_frame.pack(fill=tk.X, pady=15, padx=20)
+        
+        ttk.Button(button_frame, text="取消預約發派", command=lambda: self.perform_cancel_scheduled(req_id, detail_window)).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="關閉", command=detail_window.destroy).pack(side=tk.RIGHT)
+
     def cancel_scheduled_requirement(self):
         """取消預約發派需求單"""
         # 獲取選中的項目
@@ -1731,9 +1692,13 @@ class RequirementManager:
         if status != "未完成":
             messagebox.showwarning("警告", "只能提交狀態為「未完成」的需求單")
             return
+
+        # Clear previous selection for submit dialog
+        self.selected_submit_attachment_source_path = None
+        self.submit_attachment_path_var.set("")
             
         # 創建提交對話框
-        submit_window = self.create_toplevel_window(f"提交需求單 #{req_id}", "550x350")
+        submit_window = self.create_toplevel_window(f"提交需求單 #{req_id}", "550x450") # Increased height
         
         # 標題
         ttk.Label(
@@ -1753,6 +1718,20 @@ class RequirementManager:
         
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         comment_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # 附件選擇框架 (New)
+        submit_attachment_frame = ttk.Frame(submit_window)
+        submit_attachment_frame.pack(fill=tk.X, padx=20, pady=(5, 10))
+
+        ttk.Label(submit_attachment_frame, text="附件 (可選):").pack(side=tk.LEFT, padx=(0,10))
+        ttk.Button(
+            submit_attachment_frame,
+            text="選擇檔案",
+            command=self.select_submit_attachment # New method
+        ).pack(side=tk.LEFT, padx=(0, 5))
+
+        submit_attachment_display_label = ttk.Label(submit_attachment_frame, textvariable=self.submit_attachment_path_var, wraplength=200)
+        submit_attachment_display_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
         # 按鈕框架
         button_frame = ttk.Frame(submit_window)
@@ -1769,19 +1748,59 @@ class RequirementManager:
         ttk.Button(
             button_frame, 
             text="提交完成情況", 
-            command=lambda: self.perform_submit_requirement(req_id, comment_text.get("1.0", tk.END).strip(), submit_window)
+            command=lambda: self.perform_submit_requirement(
+                req_id, 
+                comment_text.get("1.0", tk.END).strip(), 
+                self.selected_submit_attachment_source_path, # Pass selected source path
+                submit_window
+            )
         ).pack(side=tk.RIGHT)
+
+    def select_submit_attachment(self):
+        """選擇提交需求單時的附件"""
+        filepath = filedialog.askopenfilename()
+        if filepath:
+            self.selected_submit_attachment_source_path = filepath
+            self.submit_attachment_path_var.set(os.path.basename(filepath))
+        else:
+            # If selection is cancelled, ensure paths are cleared
+            self.selected_submit_attachment_source_path = None
+            self.submit_attachment_path_var.set("")
         
-    def perform_submit_requirement(self, req_id, comment, window):
+    def perform_submit_requirement(self, req_id, comment, attachment_source_path, window):
         """執行提交需求單操作"""
         if not comment:
             messagebox.showwarning("警告", "請填寫完成情況說明", parent=window)
             return
+
+        # 處理附件
+        attachment_db_path_for_submit = None
+        if attachment_source_path: # Use the passed argument
+            uploads_dir = "uploads"
+            os.makedirs(uploads_dir, exist_ok=True)
             
-        if self.execute_with_connection(submit_requirement, req_id, comment):
+            original_filename = os.path.basename(attachment_source_path)
+            filename_base, file_extension = os.path.splitext(original_filename)
+            timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
+            unique_filename = f"{filename_base}_{timestamp}{file_extension}"
+            
+            destination_path = os.path.join(uploads_dir, unique_filename)
+            
+            try:
+                shutil.copy2(attachment_source_path, destination_path)
+                attachment_db_path_for_submit = destination_path
+                print(f"提交的附件已儲存到: {destination_path}")
+            except Exception as e:
+                messagebox.showerror("錯誤", f"複製提交的附件失敗: {e}", parent=window)
+                return
+            
+        if self.execute_with_connection(submit_requirement, req_id, comment, attachment_db_path_for_submit):
             messagebox.showinfo("成功", "需求單已提交，等待管理員審核")
             window.destroy()
             self.load_user_requirements()  # 重新加載需求單列表
+            # Clear submit attachment vars after successful submission
+            self.selected_submit_attachment_source_path = None
+            self.submit_attachment_path_var.set("")
         else:
             messagebox.showerror("錯誤", "提交需求單失敗") 
 
@@ -2421,3 +2440,12 @@ class RequirementManager:
             text="關閉", 
             command=detail_window.destroy
         ).pack(side=tk.RIGHT, padx=5)
+
+    def _open_attachment(self, attachment_path, window):
+        try:
+            if hasattr(os, 'startfile'):
+                os.startfile(attachment_path)
+            else:
+                messagebox.showerror("錯誤", "無法打開附件")
+        except Exception as e:
+            messagebox.showerror("錯誤", f"打開附件時發生錯誤: {e}")
