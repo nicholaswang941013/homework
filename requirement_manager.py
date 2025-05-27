@@ -739,7 +739,7 @@ class RequirementManager:
     def setup_staff_interface(self):
         """設置員工查看需求單介面"""
         # 創建主容器
-        main_container = ttk.Frame(self.root)
+        main_container = ttk.Frame(self.root) # Should use self.root
         main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         # 左側按鈕區域
@@ -776,8 +776,8 @@ class RequirementManager:
         self.staff_profile_tab = ttk.Frame(self.content_frame)
         
         # 設置標籤頁的內容
-        self.setup_requirements_tab(self.requirements_tab)
-        self.setup_profile_tab(self.staff_profile_tab)
+        self.setup_requirements_tab(self.requirements_tab) # This passes the correct parent to setup_requirements_tab
+        self.setup_profile_tab(self.staff_profile_tab)     # This passes the correct parent to setup_profile_tab
         
         # 預設顯示需求單列表
         self.switch_staff_tab("requirements")
@@ -1318,80 +1318,68 @@ class RequirementManager:
 
     def load_admin_dispatched_requirements(self):
         """載入管理員已發派的需求單數據"""
-        # 清空現有數據
         for item in self.admin_dispatched_treeview.get_children():
             self.admin_dispatched_treeview.delete(item)
             
-        # 獲取過濾條件
         status_filter = self.status_filter_var.get()
         staff_filter = self.staff_filter_var.get()
         
-        # 解析員工ID（如果選擇了特定員工）
         staff_id = None
         if staff_filter != "all" and "(" in staff_filter and ")" in staff_filter:
             try:
-                staff_id = int(staff_filter.split("(")[1].split(")")[0])
-            except (ValueError, IndexError):
-                pass
+                # Values are like "員工名 (ID)"
+                staff_id_str = staff_filter.split("(")[1].split(")")[0]
+                staff_id = int(staff_id_str)
+            except (ValueError, IndexError) as e:
+                print(f"解析員工ID錯誤 (dispatched_tab): {e}, 原始字串: {staff_filter}")
+                staff_id = None 
         
-        # 獲取數據
-        if staff_id:
-            # 按特定員工篩選
+        requirements = []
+        if staff_id is not None: 
             requirements = self.execute_with_connection(get_admin_requirements_by_staff, self.user_id, staff_id) or []
         else:
-            # 獲取所有需求單
             requirements = self.execute_with_connection(get_admin_dispatched_requirements, self.user_id) or []
         
-        # 添加數據到表格
         for req in requirements:
             try:
-                # 處理數據可能缺少欄位的情況
-                if len(req) >= 11:
-                    req_id, title, desc, status, priority, created_at, assignee_name, assignee_id, scheduled_time, comment, completed_at = req
-                elif len(req) >= 9:
-                    req_id, title, desc, status, priority, created_at, assignee_name, assignee_id, scheduled_time = req
-                    comment = None
-                    completed_at = None
-                else:
-                    # 基本信息不完整，跳過此記錄
-                    print(f"跳過不完整的需求單記錄: {req}")
+                if len(req) < 15:
+                    print(f"跳過不完整的管理員已發派需求單記錄 (欄位數 {len(req)}): {req}")
                     continue
                 
-                # 如果狀態過濾條件不是"all"，則只顯示符合條件的需求單
+                (req_id, title, description, status, priority, created_at, 
+                 assigner_name, assigner_id, assignee_name, assignee_id,
+                 scheduled_time, comment, completed_at, attachment_path, deleted_at) = req
+
                 if status_filter != "all" and status != status_filter:
                     continue
                     
-                # 格式化狀態和緊急程度
                 status_text = self.get_status_display_text(status)
                 priority_text = "緊急" if priority == "urgent" else "普通"
                 
-                # 格式化時間
+                created_at_display = created_at
                 if isinstance(created_at, str):
                     try:
                         date_obj = datetime.datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
-                        date_text = date_obj.strftime("%Y-%m-%d %H:%M")
+                        created_at_display = date_obj.strftime("%Y-%m-%d %H:%M")
                     except ValueError:
-                        date_text = created_at
-                else:
-                    date_text = created_at
-                    
-                # 插入數據
-                item_id = self.admin_dispatched_treeview.insert(
+                        pass 
+                
+                item_id_val = self.admin_dispatched_treeview.insert(
                     "", tk.END, 
-                    values=(req_id, title, assignee_name, status_text, priority_text, date_text)
+                    values=(req_id, title, assignee_name, status_text, priority_text, created_at_display)
                 )
                 
-                # 根據狀態設置行顏色或標記
                 if status == 'reviewing':
-                    self.admin_dispatched_treeview.item(item_id, tags=('reviewing',))
+                    self.admin_dispatched_treeview.item(item_id_val, tags=('reviewing',))
                 elif status == 'completed':
-                    self.admin_dispatched_treeview.item(item_id, tags=('completed',))
+                    self.admin_dispatched_treeview.item(item_id_val, tags=('completed',))
                 elif status == 'invalid':
-                    self.admin_dispatched_treeview.item(item_id, tags=('invalid',))
+                    self.admin_dispatched_treeview.item(item_id_val, tags=('invalid',))
             except Exception as e:
-                print(f"處理需求單時發生錯誤: {e}, 數據: {req}")
+                print(f"載入管理員已發派需求單列表時發生錯誤: {e}, 數據: {req}")
+                import traceback
+                print(traceback.format_exc())
                     
-        # 設置標籤顏色
         self.admin_dispatched_treeview.tag_configure('reviewing', background='#d4edff')
         self.admin_dispatched_treeview.tag_configure('completed', background='#e6ffe6')
         self.admin_dispatched_treeview.tag_configure('invalid', background='#f0f0f0')
