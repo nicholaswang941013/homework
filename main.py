@@ -52,6 +52,7 @@ initialize_database()
 
 # 創建主窗口
 root = tk.Tk()
+print(f"DEBUG: root window created: {root}")
 root.title("需求管理系統")
 root.geometry("800x600")  # 調整窗口大小
 root.resizable(True, True)
@@ -197,35 +198,74 @@ button_logout = ttk.Button(frame_main, text="登出")
 
 class RequirementApp:
     def __init__(self, root, current_user):
-        self.root = root
-        self.current_user = current_user
-        self.admin_frame = None
-        self.staff_frame = None
-        self.requirement_manager = None
+        try:
+            self.root = root
+            self.current_user = current_user
+            self.admin_frame = None
+            self.staff_frame = None
+            self.requirement_manager = None
 
-        if current_user.role == 'admin':
-            self.setup_admin_interface()
-        else:
-            self.setup_staff_interface()
+            if current_user.role == 'admin':
+                print("DEBUG: Calling setup_admin_interface")
+                self.setup_admin_interface()
+                print("DEBUG: Finished setup_admin_interface")
+            else:
+                print("DEBUG: Calling setup_staff_interface")
+                self.setup_staff_interface()
+                print("DEBUG: Finished setup_staff_interface")
+            print("DEBUG: RequirementApp initialized successfully")
+        except Exception as e:
+            import traceback
+            print(f"ERROR in RequirementApp.__init__: {e}")
+            print(traceback.format_exc())
+            messagebox.showerror("嚴重錯誤", f"應用程式初始化失敗: {e}")
+            root.destroy() # 發生錯誤時銷毀root窗口
 
     def setup_admin_interface(self):
         """系統管理員界面"""
-        # 使用需求單管理器設置界面，將界面放在內容區域
-        self.requirement_manager = RequirementManager(frame_content, self.current_user)
-        self.admin_frame = self.requirement_manager.setup_admin_interface()
+        try:
+            print("DEBUG: Entering setup_admin_interface")
+            # 使用需求單管理器設置界面，將界面放在內容區域
+            self.requirement_manager = RequirementManager(frame_content, self.current_user)
+            self.admin_frame = self.requirement_manager.setup_admin_interface()
+            print("DEBUG: Exiting setup_admin_interface")
+        except Exception as e:
+            import traceback
+            print(f"ERROR in setup_admin_interface: {e}")
+            print(traceback.format_exc())
+            messagebox.showerror("嚴重錯誤", f"管理員界面設定失敗: {e}")
+            self.root.destroy()
 
     def setup_staff_interface(self):
         """一般員工界面"""
-        # 確保 current_user 是有效的 User 對象，並且有 id 屬性
-        if self.current_user is None or not hasattr(self.current_user, 'id') or self.current_user.id is None:
-            messagebox.showerror("錯誤", "無法獲取用戶信息，請重新登錄")
-            return
+        try:
+            print("DEBUG: Entering setup_staff_interface")
+            # 確保 current_user 是有效的 User 對象，並且有 id 屬性
+            if self.current_user is None or not hasattr(self.current_user, 'id') or self.current_user.id is None:
+                messagebox.showerror("錯誤", "無法獲取用戶信息，請重新登錄")
+                # 改為觸發登出流程，而不是讓整個應用程式崩潰
+                if hasattr(self.root, 'event_generate'): # Ensure root is still valid
+                    self.root.event_generate("<<LogoutConfirmed>>")
+                return # 提前返回，不繼續執行後續的界面設定
             
-        print(f"設置員工界面，用戶ID: {self.current_user.id}, 用戶名: {self.current_user.username}")
+            print(f"設置員工界面，用戶ID: {self.current_user.id}, 用戶名: {self.current_user.username}")
+                
+            # 使用需求單管理器設置界面
+            self.requirement_manager = RequirementManager(frame_content, self.current_user)
+            self.staff_frame = self.requirement_manager.setup_staff_interface()
+            print("DEBUG: Exiting setup_staff_interface")
             
-        # 使用需求單管理器設置員工界面，將界面放在內容區域
-        self.requirement_manager = RequirementManager(frame_content, self.current_user)
-        self.staff_frame = self.requirement_manager.setup_staff_interface()
+        except Exception as e:
+            import traceback
+            print(f"ERROR in setup_staff_interface: {e}")
+            print(traceback.format_exc())
+            messagebox.showerror("嚴重錯誤", f"員工界面設定失敗: {e}")
+            # 考慮是否真的要 destroy root，或者也可以嘗試登出
+            if hasattr(self.root, 'event_generate'):
+                self.root.event_generate("<<LogoutConfirmed>>") # 嘗試登出回到登入頁面
+            else:
+                if self.root and hasattr(self.root, 'destroy'):
+                    self.root.destroy() # 最後手段
 
     def close_interface(self):
         """關閉當前介面"""
@@ -256,6 +296,7 @@ current_app = None
 
 def perform_login():
     global current_app
+    print(f"DEBUG: perform_login called. current_app is {current_app}")
     if current_app:
         # 如果已經登入，則不執行任何操作
         return
@@ -406,6 +447,11 @@ root.protocol("WM_DELETE_WINDOW", on_closing)
 # 啟動全局定時任務
 start_global_scheduler()
 
+print("DEBUG: About to start root.mainloop()")
+
 # 啟動主迴圈
 if __name__ == "__main__":
     root.mainloop()
+    print("DEBUG: root.mainloop() finished")
+else:
+    print("DEBUG: Not in __main__, root.mainloop() will not be called directly here.")

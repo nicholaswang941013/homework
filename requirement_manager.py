@@ -598,47 +598,46 @@ class RequirementManager:
         for item in self.admin_reviewing_treeview.get_children():
             self.admin_reviewing_treeview.delete(item)
             
-        # 獲取所有已發派的需求單
+        # 獲取所有已發派的需求單 (這些應包含完整的15個欄位)
         requirements = self.execute_with_connection(get_admin_dispatched_requirements, self.user_id) or []
         
         # 篩選狀態為「待審核」的需求單
-        reviewing_requirements = [req for req in requirements if req[3] == 'reviewing']
+        reviewing_requirements = [req for req in requirements if len(req) == 15 and req[3] == 'reviewing']
         
         # 添加數據到表格
         for req in reviewing_requirements:
             try:
-                # 處理數據可能缺少欄位的情況
-                if len(req) >= 11:
-                    req_id, title, desc, status, priority, created_at, assignee_name, assignee_id, scheduled_time, comment, completed_at = req
-                else:
-                    # 獲取基本必要數據
-                    req_id, title, desc, status, priority, created_at, assignee_name = req[:7]
+                # 解包完整的15個欄位
+                (req_id, title, description, status, priority, created_at, 
+                 assigner_name, assigner_id, assignee_name, assignee_id,
+                 scheduled_time, comment, completed_at, attachment_path, deleted_at) = req
                 
                 # 格式化緊急程度
                 priority_text = "緊急" if priority == "urgent" else "普通"
                 
                 # 格式化時間
+                date_text = created_at # Default
                 if isinstance(created_at, str):
                     try:
                         date_obj = datetime.datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
                         date_text = date_obj.strftime("%Y-%m-%d %H:%M")
                     except ValueError:
-                        date_text = created_at
-                else:
-                    date_text = created_at
-                    
-                # 插入數據
-                item_id = self.admin_reviewing_treeview.insert(
+                        pass # date_text remains original created_at
+                
+                # Treeview columns: ("id", "title", "assignee", "priority", "created_at")
+                item_id_val = self.admin_reviewing_treeview.insert(
                     "", tk.END, 
                     values=(req_id, title, assignee_name, priority_text, date_text)
                 )
                 
                 # 根據優先級設置行顏色
                 if priority == 'urgent':
-                    self.admin_reviewing_treeview.item(item_id, tags=('urgent',))
+                    self.admin_reviewing_treeview.item(item_id_val, tags=('urgent',))
                 
             except Exception as e:
                 print(f"處理待審核需求單時發生錯誤: {e}, 數據: {req}")
+                import traceback
+                print(traceback.format_exc())
                     
         # 設置標籤顏色
         self.admin_reviewing_treeview.tag_configure('urgent', background='#ffecec')
@@ -2209,47 +2208,46 @@ class RequirementManager:
         for item in self.admin_reviewing_treeview.get_children():
             self.admin_reviewing_treeview.delete(item)
             
-        # 獲取所有已發派的需求單
+        # 獲取所有已發派的需求單 (這些應包含完整的15個欄位)
         requirements = self.execute_with_connection(get_admin_dispatched_requirements, self.user_id) or []
         
         # 篩選狀態為「待審核」的需求單
-        reviewing_requirements = [req for req in requirements if req[3] == 'reviewing']
+        reviewing_requirements = [req for req in requirements if len(req) == 15 and req[3] == 'reviewing']
         
         # 添加數據到表格
         for req in reviewing_requirements:
             try:
-                # 處理數據可能缺少欄位的情況
-                if len(req) >= 11:
-                    req_id, title, desc, status, priority, created_at, assignee_name, assignee_id, scheduled_time, comment, completed_at = req
-                else:
-                    # 獲取基本必要數據
-                    req_id, title, desc, status, priority, created_at, assignee_name = req[:7]
+                # 解包完整的15個欄位
+                (req_id, title, description, status, priority, created_at, 
+                 assigner_name, assigner_id, assignee_name, assignee_id,
+                 scheduled_time, comment, completed_at, attachment_path, deleted_at) = req
                 
                 # 格式化緊急程度
                 priority_text = "緊急" if priority == "urgent" else "普通"
                 
                 # 格式化時間
+                date_text = created_at # Default
                 if isinstance(created_at, str):
                     try:
                         date_obj = datetime.datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
                         date_text = date_obj.strftime("%Y-%m-%d %H:%M")
                     except ValueError:
-                        date_text = created_at
-                else:
-                    date_text = created_at
-                    
-                # 插入數據
-                item_id = self.admin_reviewing_treeview.insert(
+                        pass # date_text remains original created_at
+                
+                # Treeview columns: ("id", "title", "assignee", "priority", "created_at")
+                item_id_val = self.admin_reviewing_treeview.insert(
                     "", tk.END, 
                     values=(req_id, title, assignee_name, priority_text, date_text)
                 )
                 
                 # 根據優先級設置行顏色
                 if priority == 'urgent':
-                    self.admin_reviewing_treeview.item(item_id, tags=('urgent',))
+                    self.admin_reviewing_treeview.item(item_id_val, tags=('urgent',))
                 
             except Exception as e:
                 print(f"處理待審核需求單時發生錯誤: {e}, 數據: {req}")
+                import traceback
+                print(traceback.format_exc())
                     
         # 設置標籤顏色
         self.admin_reviewing_treeview.tag_configure('urgent', background='#ffecec')
@@ -2262,28 +2260,25 @@ class RequirementManager:
             return
             
         item = self.admin_reviewing_treeview.item(selected_item)
-        req_id = item['values'][0]
+        req_id_from_tree = item['values'][0] # Renamed to avoid confusion with req_id from full data
         
-        # 獲取需求單詳情
-        requirements = self.execute_with_connection(get_admin_dispatched_requirements, self.user_id) or []
-        requirement = None
+        # 獲取需求單詳情 (應包含完整的15個欄位)
+        requirements_data = self.execute_with_connection(get_admin_dispatched_requirements, self.user_id) or []
+        requirement_full = None # Renamed
         
-        for req in requirements:
-            if req[0] == req_id:
-                requirement = req
+        for req_data_full in requirements_data: # Renamed
+            if len(req_data_full) == 15 and req_data_full[0] == req_id_from_tree: # Check length before access
+                requirement_full = req_data_full
                 break
         
-        if not requirement:
+        if not requirement_full:
+            messagebox.showerror("錯誤", f"找不到ID為 {req_id_from_tree} 的完整需求單詳情。")
             return
             
-        # 處理數據可能缺少欄位的情況
-        if len(requirement) >= 11:
-            req_id, title, description, status, priority, created_at, assignee_name, assignee_id, scheduled_time, comment, completed_at = requirement
-        else:
-            # 獲取基本必要數據
-            req_id, title, description, status, priority, created_at, assignee_name = requirement[:7]
-            comment = ""
-            completed_at = ""
+        # 解包完整的15個欄位
+        (req_id, title, description, status, priority, created_at, 
+         assigner_name, assigner_id, assignee_name, assignee_id,
+         scheduled_time, comment, completed_at, attachment_path, deleted_at) = requirement_full
         
         # 創建詳情對話框
         detail_window = self.create_toplevel_window(f"待審核需求單詳情 #{req_id}", "600x650")
@@ -2295,13 +2290,13 @@ class RequirementManager:
             font=('Arial', 12, 'bold')
         ).pack(pady=(20, 10), padx=20, anchor=tk.W)
         
-        # 狀態標籤
+        # 狀態標籤 (Status is 'reviewing' by definition of this tab)
         status_frame = ttk.Frame(detail_window)
         status_frame.pack(fill=tk.X, padx=20, pady=5)
         
         status_label = ttk.Label(
             status_frame, 
-            text="狀態: 待審核", 
+            text=f"狀態: {self.get_status_display_text(status)}", # Use actual status from data
             font=('Arial', 10, 'bold'),
             foreground="blue"
         )
@@ -2328,9 +2323,14 @@ class RequirementManager:
             priority_label.configure(foreground="red")
         
         # 發派時間
+        created_at_display = created_at
+        if isinstance(created_at, str):
+            try:
+                created_at_display = datetime.datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M")
+            except ValueError: pass
         ttk.Label(
             left_details, 
-            text=f"發派時間: {created_at}", 
+            text=f"發派時間: {created_at_display}", 
             font=('Arial', 10)
         ).pack(pady=2, anchor=tk.W)
         
@@ -2345,10 +2345,16 @@ class RequirementManager:
             font=('Arial', 10)
         ).pack(pady=2, anchor=tk.W)
         
-        # 完成時間
+        # 提交時間 (completed_at for reviewing items)
+        completed_at_display = completed_at
+        if isinstance(completed_at, str):
+            try:
+                completed_at_display = datetime.datetime.strptime(completed_at, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M")
+            except ValueError: pass
+
         ttk.Label(
             right_details, 
-            text=f"提交時間: {completed_at}", 
+            text=f"提交時間: {completed_at_display if completed_at else '-'}", # Show '-' if None
             font=('Arial', 10)
         ).pack(pady=2, anchor=tk.W)
         
@@ -2368,7 +2374,7 @@ class RequirementManager:
         
         content_text = tk.Text(content_frame, wrap=tk.WORD, height=8)
         content_text.insert(tk.END, description)
-        content_text.config(state=tk.DISABLED)  # 設為只讀
+        content_text.config(state=tk.DISABLED)
         
         scrollbar = ttk.Scrollbar(content_frame, command=content_text.yview)
         content_text.configure(yscrollcommand=scrollbar.set)
@@ -2378,32 +2384,40 @@ class RequirementManager:
         
         # 員工完成情況說明
         if comment:
-            # 說明標題
             ttk.Label(
                 detail_window, 
                 text="員工完成情況說明:", 
                 font=('Arial', 10, 'bold')
             ).pack(pady=(10, 5), padx=20, anchor=tk.W)
             
-            # 說明文本框
-            comment_frame = ttk.Frame(detail_window)
-            comment_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=5)
+            comment_display_frame = ttk.Frame(detail_window) # Renamed to avoid conflict with the Text widget
+            comment_display_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=5)
             
-            comment_text = tk.Text(comment_frame, wrap=tk.WORD, height=6)
-            comment_text.insert(tk.END, comment)
-            comment_text.config(state=tk.DISABLED)  # 設為只讀
+            comment_text_widget = tk.Text(comment_display_frame, wrap=tk.WORD, height=6) # Renamed
+            comment_text_widget.insert(tk.END, comment)
+            comment_text_widget.config(state=tk.DISABLED)
             
-            comment_scrollbar = ttk.Scrollbar(comment_frame, command=comment_text.yview)
-            comment_text.configure(yscrollcommand=comment_scrollbar.set)
+            comment_scrollbar = ttk.Scrollbar(comment_display_frame, command=comment_text_widget.yview) # Use renamed widget
+            comment_text_widget.configure(yscrollcommand=comment_scrollbar.set) # Use renamed widget
             
             comment_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-            comment_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            comment_text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True) # Use renamed widget
+
+        # 附件顯示
+        if attachment_path:
+            ttk.Label(detail_window, text="附件:", font=('Arial', 10, 'bold')).pack(pady=(10,0), padx=20, anchor=tk.W)
+            attachment_display_frame_details = ttk.Frame(detail_window) # Unique name
+            attachment_display_frame_details.pack(fill=tk.X, padx=20, pady=(0,5))
+
+            filename = os.path.basename(attachment_path)
+            attach_label = ttk.Label(attachment_display_frame_details, text=filename, foreground="blue", cursor="hand2")
+            attach_label.pack(side=tk.LEFT, padx=(0,10))
+            attach_label.bind("<Button-1>", lambda e, ap=attachment_path: self._open_attachment(ap, detail_window))
         
         # 按鈕框架
         button_frame = ttk.Frame(detail_window)
         button_frame.pack(fill=tk.X, pady=15, padx=20)
         
-        # 左側按鈕 - 審核按鈕
         left_button_frame = ttk.Frame(button_frame)
         left_button_frame.pack(side=tk.LEFT)
         
@@ -2419,15 +2433,14 @@ class RequirementManager:
             command=lambda: self.perform_reject_requirement(req_id, detail_window)
         ).pack(side=tk.LEFT, padx=5)
         
-        # 右側按鈕 - 關閉按鈕
-        right_button_frame = ttk.Frame(button_frame)
+        right_button_frame = ttk.Frame(button_frame) # No need for this extra frame
         right_button_frame.pack(side=tk.RIGHT)
         
         ttk.Button(
-            right_button_frame, 
+            right_button_frame,  # Can be button_frame directly
             text="關閉", 
             command=detail_window.destroy
-        ).pack(side=tk.RIGHT, padx=5)
+        ).pack(side=tk.RIGHT, padx=5) # This was also .pack(side=tk.RIGHT)
 
     def _open_attachment(self, attachment_path, window):
         try:
