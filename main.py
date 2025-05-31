@@ -7,7 +7,7 @@ sys.dont_write_bytecode = True
 import tkinter as tk
 from tkinter import ttk, messagebox
 from auth import login
-from database import create_connection, initialize_database, dispatch_scheduled_requirements
+from database import create_connection, initialize_database, dispatch_scheduled_requirements, has_upcoming_scheduled_requirements
 from requirement_manager import RequirementManager
 from registration import show_registration_form
 import datetime
@@ -65,7 +65,7 @@ scheduler_thread = None
 
 # 啓動定時任務，檢查並發派預約需求單
 def start_global_scheduler():
-    """啟動全局定時任務，每分鐘檢查一次是否有到期的需求單需要發派"""
+    """啟動全局定時任務，每10秒檢查一次是否有到期的需求單需要發派"""
     global scheduler_running, scheduler_thread
     
     if scheduler_running:
@@ -74,7 +74,7 @@ def start_global_scheduler():
     scheduler_running = True
     
     def check_scheduled_requirements():
-        retry_interval = 60  # 正常情況下每分鐘檢查一次
+        retry_interval = 10  # 正常情況下每10秒檢查一次
         
         while scheduler_running:
             try:
@@ -82,22 +82,28 @@ def start_global_scheduler():
                 conn = create_connection()
                 if conn:
                     dispatched_count = dispatch_scheduled_requirements(conn)
+                    
+                    # 檢查是否有即將到期的需求單，如果有則更頻繁檢查
+                    has_upcoming = has_upcoming_scheduled_requirements(conn)
                     conn.close()
                     
                     if dispatched_count > 0:
                         # 使用主線程安全的方式顯示消息（僅當有管理員登入時）
                         root.after(0, lambda: show_dispatch_notification(dispatched_count))
                         
-                    # 成功執行後重置重試間隔
-                    retry_interval = 60
+                    # 根據是否有即將到期的需求單動態調整檢查頻率
+                    if has_upcoming:
+                        retry_interval = 5  # 有即將到期的需求單時，每5秒檢查一次
+                    else:
+                        retry_interval = 10  # 沒有即將到期的需求單時，每10秒檢查一次
                 else:
                     # 無法創建連接時增加重試間隔
                     print("無法創建資料庫連接，稍後重試")
-                    retry_interval = min(retry_interval * 2, 300)  # 最多等待5分鐘
+                    retry_interval = min(retry_interval * 2, 60)  # 最多等待1分鐘
             except Exception as e:
                 # 發生錯誤時增加重試間隔
                 print(f"定時任務執行錯誤: {e}")
-                retry_interval = min(retry_interval * 2, 300)  # 最多等待5分鐘
+                retry_interval = min(retry_interval * 2, 60)  # 最多等待1分鐘
                 
             # 等待指定的時間後再次檢查
             for _ in range(retry_interval):
@@ -108,7 +114,7 @@ def start_global_scheduler():
     # 在後台線程運行定時任務
     scheduler_thread = threading.Thread(target=check_scheduled_requirements, daemon=True)
     scheduler_thread.start()
-    print("全局預約發派調度器已啟動")
+    print("全局預約發派調度器已啟動（動態檢查頻率：正常10秒，即將到期時5秒）")
 
 
 # 顯示發派通知（只有在有管理員登入時才會彈出）

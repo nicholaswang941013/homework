@@ -287,6 +287,26 @@ def dispatch_scheduled_requirements(conn):
         print(f"自動發派預約需求單時發生錯誤: {e}")
         return 0
 
+def has_upcoming_scheduled_requirements(conn, minutes_ahead=2):
+    """檢查是否有即將到期的預約需求單（預設檢查未來2分鐘內）"""
+    try:
+        current_time_dt = datetime.datetime.now()
+        future_time_dt = current_time_dt + datetime.timedelta(minutes=minutes_ahead)
+        future_time_str = future_time_dt.strftime("%Y-%m-%d %H:%M:%S")
+        current_time_str = current_time_dt.strftime("%Y-%m-%d %H:%M:%S")
+        
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT COUNT(*) FROM requirements 
+            WHERE is_dispatched = 0 AND scheduled_time > ? AND scheduled_time <= ? AND is_deleted = 0
+        ''', (current_time_str, future_time_str))
+        
+        count = cursor.fetchone()[0]
+        return count > 0
+    except Error as e:
+        print(f"檢查即將到期預約需求單時發生錯誤: {e}")
+        return False
+
 def cancel_scheduled_requirement(conn, req_id):
     """取消預約發派的需求單 (軟刪除)"""
     try:
