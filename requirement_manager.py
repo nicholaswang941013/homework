@@ -2041,17 +2041,17 @@ class RequirementManager:
             
             # 說明文本框
             comment_frame = ttk.Frame(detail_window)
-            comment_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=5)
+            comment_frame.pack(fill=tk.X, padx=20, pady=5)
             
             comment_text = tk.Text(comment_frame, wrap=tk.WORD, height=4)
             comment_text.insert(tk.END, comment)
             comment_text.config(state=tk.DISABLED)  # 設為只讀
             
-            comment_scrollbar = ttk.Scrollbar(comment_frame, command=comment_text.yview)
-            comment_text.configure(yscrollcommand=comment_scrollbar.set)
+            comment_scroll = ttk.Scrollbar(comment_frame, command=comment_text.yview)
+            comment_text.configure(yscrollcommand=comment_scroll.set)
             
-            comment_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-            comment_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            comment_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+            comment_text.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
         # 按鈕框架
         button_frame = ttk.Frame(detail_window)

@@ -331,18 +331,11 @@ def submit_requirement(conn, req_id, comment, attachment_path=None):
         cursor = conn.cursor()
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        if attachment_path:
-            cursor.execute('''
-                UPDATE requirements
-                SET status = 'reviewing', comment = ?, completed_at = ?, attachment_path = ?
-                WHERE id = ? AND status = 'pending' AND is_deleted = 0
-            ''', (comment, current_time, attachment_path, req_id))
-        else:
-            cursor.execute('''
-                UPDATE requirements
-                SET status = 'reviewing', comment = ?, completed_at = ?
-                WHERE id = ? AND status = 'pending' AND is_deleted = 0
-            ''', (comment, current_time, req_id))
+        cursor.execute('''
+            UPDATE requirements
+            SET status = 'reviewing', comment = ?, completed_at = ?
+            WHERE id = ? AND status = 'pending' AND is_deleted = 0
+        ''', (comment, current_time, req_id))
         
         conn.commit()
         return cursor.rowcount > 0
