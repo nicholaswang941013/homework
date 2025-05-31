@@ -73,7 +73,7 @@ def start_global_scheduler():
     scheduler_running = True
     
     def check_scheduled_requirements():
-        retry_interval = 60  # 正常情況下每分鐘檢查一次
+        retry_interval = 10  # 正常情況下每10秒檢查一次
         
         while scheduler_running:
             try:
@@ -88,7 +88,7 @@ def start_global_scheduler():
                         root.after(0, lambda: show_dispatch_notification(dispatched_count))
                         
                     # 成功執行後重置重試間隔
-                    retry_interval = 60
+                    retry_interval = 10
                 else:
                     # 無法創建連接時增加重試間隔
                     print("無法創建資料庫連接，稍後重試")

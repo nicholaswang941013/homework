@@ -1725,6 +1725,7 @@ class RequirementManager:
             
         item = self.staff_req_treeview.item(selected_item)
         req_id = item['values'][0]
+        req_title = item['values'][1]  # 獲取需求單標題
         status = item['values'][3]  # 獲取目前狀態文字
         
         # 檢查狀態是否為「未完成」
@@ -1732,8 +1733,8 @@ class RequirementManager:
             messagebox.showwarning("警告", "只能提交狀態為「未完成」的需求單")
             return
             
-        # 創建提交對話框
-        submit_window = self.create_toplevel_window(f"提交需求單 #{req_id}", "550x350")
+        # 創建提交對話框，使用需求單標題作為視窗標題
+        submit_window = self.create_toplevel_window(req_title, "550x350")
         
         # 標題
         ttk.Label(
