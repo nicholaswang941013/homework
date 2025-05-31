@@ -82,28 +82,22 @@ def start_global_scheduler():
                 conn = create_connection()
                 if conn:
                     dispatched_count = dispatch_scheduled_requirements(conn)
-                    
-                    # 檢查是否有即將到期的需求單，如果有則更頻繁檢查
-                    has_upcoming = has_upcoming_scheduled_requirements(conn)
                     conn.close()
                     
                     if dispatched_count > 0:
                         # 使用主線程安全的方式顯示消息（僅當有管理員登入時）
                         root.after(0, lambda: show_dispatch_notification(dispatched_count))
                         
-                    # 根據是否有即將到期的需求單動態調整檢查頻率
-                    if has_upcoming:
-                        retry_interval = 5  # 有即將到期的需求單時，每5秒檢查一次
-                    else:
-                        retry_interval = 10  # 沒有即將到期的需求單時，每10秒檢查一次
+                    # 成功執行後重置重試間隔
+                    retry_interval = 10
                 else:
                     # 無法創建連接時增加重試間隔
                     print("無法創建資料庫連接，稍後重試")
-                    retry_interval = min(retry_interval * 2, 60)  # 最多等待1分鐘
+                    retry_interval = min(retry_interval * 2, 300)  # 最多等待5分鐘
             except Exception as e:
                 # 發生錯誤時增加重試間隔
                 print(f"定時任務執行錯誤: {e}")
-                retry_interval = min(retry_interval * 2, 60)  # 最多等待1分鐘
+                retry_interval = min(retry_interval * 2, 300)  # 最多等待5分鐘
                 
             # 等待指定的時間後再次檢查
             for _ in range(retry_interval):

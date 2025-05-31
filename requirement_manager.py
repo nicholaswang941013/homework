@@ -735,10 +735,10 @@ class RequirementManager:
         # 載入數據
         self.load_admin_scheduled_requirements()
 
-    def setup_staff_interface(self):
+    def setup_staff_interface(self, parent):
         """設置員工查看需求單介面"""
         # 創建主容器
-        main_container = ttk.Frame(self.root) # Should use self.root
+        main_container = ttk.Frame(parent) # Should use self.root
         main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         # 左側按鈕區域
@@ -1681,6 +1681,7 @@ class RequirementManager:
             
         item = self.staff_req_treeview.item(selected_item)
         req_id = item['values'][0]
+        req_title = item['values'][1]  # 獲取需求單標題
         status = item['values'][3]  # 獲取目前狀態文字
         
         # 檢查狀態是否為「未完成」
@@ -1692,8 +1693,8 @@ class RequirementManager:
         self.selected_submit_attachment_source_path = None
         self.submit_attachment_path_var.set("")
             
-        # 創建提交對話框
-        submit_window = self.create_toplevel_window(f"提交需求單 #{req_id}", "550x450") # Increased height
+        # 創建提交對話框，使用需求單標題作為視窗標題
+        submit_window = self.create_toplevel_window(req_title, "550x450") # Increased height
         
         # 標題
         ttk.Label(
