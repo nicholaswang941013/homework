@@ -251,25 +251,25 @@ class RequirementManager:
         self.admin_frame.pack(pady=10, fill=tk.BOTH)
         
         # 創建管理員界面元素 - 使用網格佈局
-        # 標題輸入
-        ttk.Label(self.admin_frame, text="標題:").grid(row=0, column=0, sticky=tk.W)
-        self.title_entry = ttk.Entry(self.admin_frame, width=40)
-        self.title_entry.grid(row=0, column=1, sticky=tk.W+tk.E, padx=5)
-        
-        # 指派對象選擇
-        ttk.Label(self.admin_frame, text="指派給:").grid(row=1, column=0, sticky=tk.W)
+        # 指派對象選擇（移到最上面）
+        ttk.Label(self.admin_frame, text="指派給:").grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
         
         # 創建下拉選單來選擇員工
         staffs = self.execute_with_connection(get_all_staff) or []
         staff_list = [f"{staff[1]} (ID:{staff[0]})" for staff in staffs]
         
         self.staff_combobox = ttk.Combobox(self.admin_frame, values=staff_list, width=37)
-        self.staff_combobox.grid(row=1, column=1, sticky=tk.W, padx=5)
+        self.staff_combobox.grid(row=0, column=1, sticky=tk.W, padx=5, pady=(0, 5))
+        
+        # 標題輸入（移到第二位，增加上邊距）
+        ttk.Label(self.admin_frame, text="標題:").grid(row=1, column=0, sticky=tk.W, pady=(10, 0))
+        self.title_entry = ttk.Entry(self.admin_frame, width=40)
+        self.title_entry.grid(row=1, column=1, sticky=tk.W+tk.E, padx=5, pady=(10, 0))
         
         # 內容輸入
-        ttk.Label(self.admin_frame, text="內容:").grid(row=2, column=0, sticky=tk.NW, pady=(5, 0))
+        ttk.Label(self.admin_frame, text="內容:").grid(row=2, column=0, sticky=tk.NW, pady=(10, 0))
         self.desc_text = tk.Text(self.admin_frame, width=40, height=8)
-        self.desc_text.grid(row=2, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
+        self.desc_text.grid(row=2, column=1, sticky=tk.W+tk.E, padx=5, pady=(10, 5))
         
         # 緊急程度選擇
         ttk.Label(self.admin_frame, text="緊急程度:").grid(row=3, column=0, sticky=tk.W)
