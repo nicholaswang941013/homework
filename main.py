@@ -252,7 +252,7 @@ class RequirementApp:
                 
             # 使用需求單管理器設置界面
             self.requirement_manager = RequirementManager(frame_content, self.current_user)
-            self.staff_frame = self.requirement_manager.setup_staff_interface()
+            self.staff_frame = self.requirement_manager.setup_staff_interface(frame_content)
             print("DEBUG: Exiting setup_staff_interface")
             
         except Exception as e:
