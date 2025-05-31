@@ -111,7 +111,8 @@ def initialize_database():
 def add_user(username, password, name, email, role='staff'):
     """添加新使用者"""
     conn = create_connection()
-    if not conn: return False
+    if not conn: 
+        return False
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM users WHERE username = ?", (username,))
@@ -130,7 +131,8 @@ def add_user(username, password, name, email, role='staff'):
         print(f"添加使用者時發生錯誤: {e}")
         return False
     finally:
-        if conn: conn.close()
+        if conn: 
+            conn.close()
 
 def create_requirement(conn, title, description, assigner_id, assignee_id, priority='normal', scheduled_time=None, attachment_path=None):
     """建立新的需求單"""
@@ -321,7 +323,7 @@ def submit_requirement(conn, req_id, comment, attachment_path=None):
                 SET status = 'reviewing', comment = ?, completed_at = ?
                 WHERE id = ? AND status = 'pending' AND is_deleted = 0
             ''', (comment, current_time, req_id))
-            
+        
         conn.commit()
         return cursor.rowcount > 0
     except Error as e:
@@ -350,7 +352,7 @@ def reject_requirement(conn, req_id):
         # Clear previous comment and completion time when rejecting
         cursor.execute('''
             UPDATE requirements
-            SET status = 'pending', comment = NULL, completed_at = NULL 
+            SET status = 'pending', comment = NULL, completed_at = NULL
             WHERE id = ? AND status = 'reviewing' AND is_deleted = 0
         ''', (req_id,))
         conn.commit()
@@ -428,7 +430,7 @@ def get_deleted_requirements(conn, admin_id):
         return cursor.fetchall()
     except Error as e:
         print(f"獲取已刪除需求單時發生錯誤: {e}")
-        return []
+        return [] 
 
 # Example of how to clear all requirements (for testing, use with caution)
 def clear_all_requirements_DANGEROUS(conn):

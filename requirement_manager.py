@@ -1410,27 +1410,35 @@ class RequirementManager:
         
         # 添加數據到表格
         for req in requirements:
-            req_id, title, desc, priority, scheduled_time, assignee_name, assignee_id = req
-            
-            # 格式化緊急程度
-            priority_text = "緊急" if priority == "urgent" else "普通"
-            
-            # 格式化時間
-            if isinstance(scheduled_time, str):
-                try:
-                    date_obj = datetime.datetime.strptime(scheduled_time, "%Y-%m-%d %H:%M:%S")
-                    scheduled_text = date_obj.strftime("%Y-%m-%d %H:%M")
-                except ValueError:
-                    scheduled_text = scheduled_time
-            else:
-                scheduled_text = scheduled_time
+            try:
+                # 正確解析所有15個欄位
+                (req_id, title, description, status, priority, created_at, 
+                 assigner_name, assigner_id, assignee_name, assignee_id,
+                 scheduled_time, comment, completed_at, attachment_path, deleted_at) = req
                 
-            # 插入數據
-            self.admin_scheduled_treeview.insert(
-                "", tk.END, 
-                values=(req_id, title, assignee_name, priority_text, scheduled_text)
-            )
-            
+                # 格式化緊急程度
+                priority_text = "緊急" if priority == "urgent" else "普通"
+                
+                # 格式化時間
+                if isinstance(scheduled_time, str):
+                    try:
+                        date_obj = datetime.datetime.strptime(scheduled_time, "%Y-%m-%d %H:%M:%S")
+                        scheduled_text = date_obj.strftime("%Y-%m-%d %H:%M")
+                    except ValueError:
+                        scheduled_text = scheduled_time
+                else:
+                    scheduled_text = scheduled_time
+                    
+                # 插入數據
+                self.admin_scheduled_treeview.insert(
+                    "", tk.END, 
+                    values=(req_id, title, assignee_name, priority_text, scheduled_text)
+                )
+            except Exception as e:
+                print(f"載入預約發派需求單時發生錯誤: {e}, 數據: {req}")
+                import traceback
+                print(traceback.format_exc())
+
     def show_dispatched_details(self, event):
         """顯示已發派需求單詳情"""
         selected_item = self.admin_dispatched_treeview.selection()
