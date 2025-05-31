@@ -18,54 +18,59 @@ class RequirementManager:
     """需求單管理類"""
     
     def __init__(self, root, current_user):
-        """初始化需求單管理界面
-        
-        Args:
-            root: tkinter根視窗
-            current_user: 當前登入的使用者
-        """
-        self.root = root
-        self.current_user = current_user
-        # 確保我們可以訪問用戶ID
-        self.user_id = None
-        
-        # 從不同格式的用戶對象中獲取用戶ID
-        if hasattr(current_user, 'id') and current_user.id is not None:
-            # 使用 User 類的 id 屬性
-            self.user_id = current_user.id
-        elif isinstance(current_user, (list, tuple)) and len(current_user) > 0:
-            # 從列表或元組中獲取 ID
-            self.user_id = current_user[0]
-        elif isinstance(current_user, dict) and 'id' in current_user:
-            # 從字典中獲取 ID
-            self.user_id = current_user['id']
+        try:
+            print(f"DEBUG: RequirementManager initializing with user {current_user.username}")
+            self.root = root
+            self.current_user = current_user
             
-        print(f"當前用戶: ID={self.user_id}, 類型={type(current_user)}")
-        
-        if self.user_id is None:
-            print(f"警告: 無法獲取用戶ID! 用戶對象: {current_user}")
-        
-        # 不再保持長期連接，改為每次操作時創建新連接
-        self.conn = None
-        self.admin_frame = None
-        self.admin_notebook = None
-        self.staff_frame = None
-        self.staff_req_treeview = None
-        
-        # 追蹤打開的 Toplevel 視窗
-        self.open_windows = []
-        
-        # 附件路徑變數 (for dispatch tab)
-        self.attachment_path_var = tk.StringVar()
-        self.selected_attachment_source_path = None
-
-        # 附件路徑變數 (for submit dialog)
-        self.submit_attachment_path_var = tk.StringVar()
-        self.selected_submit_attachment_source_path = None
-        
-        # 不再需要啟動定時任務，因為已經移到全局範圍
-        # self.scheduler_running = False
-        # self.start_scheduler()
+            # 如果 current_user 是 User 對象，提取 id
+            if hasattr(current_user, 'id'):
+                self.user_id = current_user.id
+            else:
+                # 如果是字典或其他類型
+                self.user_id = current_user.get('id') if hasattr(current_user, 'get') else current_user['id']
+            
+            print(f"DEBUG: User ID set to {self.user_id}")
+            
+            # 用於存儲打開的頂級窗口
+            self.open_windows = []
+            
+            # 建立管理員界面
+            if current_user.role == 'admin':
+                self.admin_frame = None
+                self.staff_combobox = None
+                self.title_entry = None
+                self.desc_text = None
+                self.priority_var = tk.StringVar(value="normal")
+                self.dispatch_method_var = tk.StringVar(value="immediate")
+                
+                # 時間選擇變數
+                self.year_var = tk.StringVar()
+                self.month_var = tk.StringVar()
+                self.day_var = tk.StringVar()
+                self.hour_var = tk.StringVar()
+                self.minute_var = tk.StringVar()
+                
+                # 狀態過濾變數
+                self.status_filter_var = tk.StringVar(value="all")
+                self.staff_filter_var = tk.StringVar(value="all")
+                
+                # 預約發派員工過濾變數
+                self.scheduled_staff_filter_var = tk.StringVar(value="all")
+                
+            else:
+                # 員工界面變數
+                self.staff_frame = None
+                self.staff_req_treeview = None
+                self.staff_status_filter_var = tk.StringVar(value="all")
+                
+            print("DEBUG: RequirementManager initialization completed successfully")
+            
+        except Exception as e:
+            import traceback
+            print(f"ERROR in RequirementManager.__init__: {e}")
+            print(traceback.format_exc())
+            raise
     
     def get_connection(self):
         """獲取新的資料庫連接"""
@@ -241,48 +246,35 @@ class RequirementManager:
         
     def setup_dispatch_tab(self, parent):
         """設置發派需求單標籤頁"""
-        # 需求單派發框架
-        self.admin_frame = ttk.Frame(parent, padding=10)
-        self.admin_frame.pack(fill=tk.BOTH, expand=True)
-
-        # 員工選擇標籤
-        ttk.Label(self.admin_frame, text="指派給:").grid(row=0, column=0, sticky=tk.W)
+        # 發派需求單框架
+        self.admin_frame = ttk.LabelFrame(parent, text="發派需求單", padding=10)
+        self.admin_frame.pack(pady=10, fill=tk.BOTH)
         
-        # 員工選擇框架（包含下拉選單和刷新按鈕）
-        staff_selection_frame = ttk.Frame(self.admin_frame)
-        staff_selection_frame.grid(row=0, column=1, sticky=tk.W, pady=5)
-        
-        # 員工下拉選單
-        self.staff_var = tk.StringVar()
-        staffs = self.execute_with_connection(get_all_staff) or []
-        self.staff_combobox = ttk.Combobox(
-            staff_selection_frame,
-            textvariable=self.staff_var,
-            values=[f"{staff[1]} (ID:{staff[0]})" for staff in staffs],
-            width=30
-        )
-        self.staff_combobox.pack(side=tk.LEFT, padx=(0, 5))
-        
-        # 添加刷新按鈕
-        ttk.Button(
-            staff_selection_frame,
-            text="刷新列表",
-            command=self.refresh_staff_list
-        ).pack(side=tk.LEFT)
-
-        # 需求單標題
-        ttk.Label(self.admin_frame, text="標題:").grid(row=1, column=0, sticky=tk.W)
+        # 創建管理員界面元素 - 使用網格佈局
+        # 標題輸入
+        ttk.Label(self.admin_frame, text="標題:").grid(row=0, column=0, sticky=tk.W)
         self.title_entry = ttk.Entry(self.admin_frame, width=40)
-        self.title_entry.grid(row=1, column=1, pady=5)
-
-        # 需求單內容
-        ttk.Label(self.admin_frame, text="內容:").grid(row=2, column=0, sticky=tk.NW)
-        self.desc_text = tk.Text(self.admin_frame, width=40, height=5)
-        self.desc_text.grid(row=2, column=1, pady=5)
+        self.title_entry.grid(row=0, column=1, sticky=tk.W+tk.E, padx=5)
+        
+        # 指派對象選擇
+        ttk.Label(self.admin_frame, text="指派給:").grid(row=1, column=0, sticky=tk.W)
+        
+        # 創建下拉選單來選擇員工
+        staffs = self.execute_with_connection(get_all_staff) or []
+        staff_list = [f"{staff[1]} (ID:{staff[0]})" for staff in staffs]
+        
+        self.staff_combobox = ttk.Combobox(self.admin_frame, values=staff_list, width=37)
+        self.staff_combobox.grid(row=1, column=1, sticky=tk.W, padx=5)
+        
+        # 內容輸入
+        ttk.Label(self.admin_frame, text="內容:").grid(row=2, column=0, sticky=tk.NW, pady=(5, 0))
+        self.desc_text = tk.Text(self.admin_frame, width=40, height=8)
+        self.desc_text.grid(row=2, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
         
         # 緊急程度選擇
         ttk.Label(self.admin_frame, text="緊急程度:").grid(row=3, column=0, sticky=tk.W)
         self.priority_var = tk.StringVar(value="normal")
+        
         priority_frame = ttk.Frame(self.admin_frame)
         priority_frame.grid(row=3, column=1, sticky=tk.W, pady=5)
         
@@ -404,26 +396,12 @@ class RequirementManager:
         
         ttk.Label(time_frame, text="分").pack(side=tk.LEFT)
 
-        # 附件選擇 (New - Row 6)
-        ttk.Label(self.admin_frame, text="附件:").grid(row=6, column=0, sticky=tk.W, pady=5)
-        attachment_frame = ttk.Frame(self.admin_frame)
-        attachment_frame.grid(row=6, column=1, sticky=tk.W+tk.E, pady=5)
-
-        ttk.Button(
-            attachment_frame,
-            text="選擇檔案",
-            command=self.select_dispatch_attachment
-        ).pack(side=tk.LEFT, padx=(0, 5))
-
-        self.attachment_display_label = ttk.Label(attachment_frame, textvariable=self.attachment_path_var, wraplength=250)
-        self.attachment_display_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-        # 派發按鈕 (Adjusted - Row 7, previously Row 6)
+        # 派發按鈕
         ttk.Button(
             self.admin_frame,
             text="派發需求單",
             command=self.create_requirement
-        ).grid(row=7, column=1, pady=10, sticky=tk.E) # Changed row from 6 to 7
+        ).grid(row=6, column=1, pady=10, sticky=tk.E)
         
     def setup_dispatched_tab(self, parent):
         """設置已發派需求單標籤頁"""
@@ -640,7 +618,7 @@ class RequirementManager:
                 print(traceback.format_exc())
                     
         # 設置標籤顏色
-        self.admin_reviewing_treeview.tag_configure('urgent', background='#ffecec')
+        self.admin_reviewing_treeview.tag_configure('urgent', background='#d4edff')
         
     def setup_scheduled_tab(self, parent):
         """設置預約發派需求單標籤頁"""
@@ -1144,7 +1122,7 @@ class RequirementManager:
         ).pack(side=tk.RIGHT, padx=20)
 
     def toggle_schedule_frame(self):
-        """根據發派方式顯示或隱藏預約時間設定框架"""
+        """切換預約發派框架的顯示狀態"""
         if self.dispatch_method_var.get() == "scheduled":
             self.schedule_frame.grid()
         else:
@@ -1161,47 +1139,26 @@ class RequirementManager:
             self.attachment_path_var.set("")
 
     def create_requirement(self):
-        """建立新的需求單"""
-        staff_str = self.staff_combobox.get()
-        if not staff_str:
-            messagebox.showerror("錯誤", "請選擇要指派的員工")
+        """創建並發派需求單"""
+        # 獲取選中的員工ID
+        selected_staff = self.staff_combobox.get()
+        if not selected_staff:
+            messagebox.showerror("錯誤", "請選擇指派員工")
             return
-
-        # 從下拉框中提取員工ID
+        
         try:
-            staff_id = int(staff_str.split("ID:")[1].rstrip(")"))
-        except (IndexError, ValueError) as e:
-            messagebox.showerror("錯誤", f"提取員工ID時發生錯誤: {e}")
+            staff_id = int(selected_staff.split("ID:")[1].replace(")", ""))
+        except (ValueError, IndexError):
+            messagebox.showerror("錯誤", "員工選擇格式錯誤")
             return
-
-        title = self.title_entry.get()
+        
+        title = self.title_entry.get().strip()
         description = self.desc_text.get("1.0", tk.END).strip()
         priority = self.priority_var.get()
-
+        
         if not title or not description:
             messagebox.showerror("錯誤", "標題和內容不能為空")
             return
-        
-        # 處理附件
-        attachment_db_path = None
-        if self.selected_attachment_source_path:
-            uploads_dir = "uploads"
-            os.makedirs(uploads_dir, exist_ok=True)
-            
-            original_filename = os.path.basename(self.selected_attachment_source_path)
-            filename_base, file_extension = os.path.splitext(original_filename)
-            timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f") 
-            unique_filename = f"{filename_base}_{timestamp}{file_extension}"
-            
-            destination_path = os.path.join(uploads_dir, unique_filename)
-            
-            try:
-                shutil.copy2(self.selected_attachment_source_path, destination_path)
-                attachment_db_path = destination_path 
-                print(f"附件已儲存到: {destination_path}")
-            except Exception as e:
-                messagebox.showerror("錯誤", f"複製附件失敗: {e}")
-                return
             
         # 處理預約發派邏輯
         scheduled_time = None
@@ -1235,7 +1192,7 @@ class RequirementManager:
             staff_id,
             priority,
             scheduled_time,
-            attachment_db_path
+            None  # 不再使用附件
         )
 
         if req_id:
@@ -1245,9 +1202,6 @@ class RequirementManager:
                 message = f"需求單 #{req_id} (緊急程度: {priority_text}) 已設定於 {scheduled_time} 發派"
             else:
                 message = f"需求單 #{req_id} (緊急程度: {priority_text}) 已成功派發"
-            
-            if attachment_db_path:
-                message += f"\n附件: {os.path.basename(attachment_db_path)}"
                 
             messagebox.showinfo("成功", message)
             self.title_entry.delete(0, tk.END)
@@ -1255,9 +1209,6 @@ class RequirementManager:
             self.priority_var.set("normal")  # 重置為普通優先級
             self.dispatch_method_var.set("immediate")  # 重置為立即發派
             self.toggle_schedule_frame()  # 更新UI顯示
-            # 清空附件選擇
-            self.selected_attachment_source_path = None
-            self.attachment_path_var.set("")
         else:
             messagebox.showerror("錯誤", "派發需求單失敗")
 
@@ -1688,13 +1639,9 @@ class RequirementManager:
         if status != "未完成":
             messagebox.showwarning("警告", "只能提交狀態為「未完成」的需求單")
             return
-
-        # Clear previous selection for submit dialog
-        self.selected_submit_attachment_source_path = None
-        self.submit_attachment_path_var.set("")
             
         # 創建提交對話框，使用需求單標題作為視窗標題
-        submit_window = self.create_toplevel_window(req_title, "550x450") # Increased height
+        submit_window = self.create_toplevel_window(req_title, "550x350")
         
         # 標題
         ttk.Label(
@@ -1714,20 +1661,6 @@ class RequirementManager:
         
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         comment_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        # 附件選擇框架 (New)
-        submit_attachment_frame = ttk.Frame(submit_window)
-        submit_attachment_frame.pack(fill=tk.X, padx=20, pady=(5, 10))
-
-        ttk.Label(submit_attachment_frame, text="附件 (可選):").pack(side=tk.LEFT, padx=(0,10))
-        ttk.Button(
-            submit_attachment_frame,
-            text="選擇檔案",
-            command=self.select_submit_attachment # New method
-        ).pack(side=tk.LEFT, padx=(0, 5))
-
-        submit_attachment_display_label = ttk.Label(submit_attachment_frame, textvariable=self.submit_attachment_path_var, wraplength=200)
-        submit_attachment_display_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
         # 按鈕框架
         button_frame = ttk.Frame(submit_window)
@@ -1747,58 +1680,22 @@ class RequirementManager:
             command=lambda: self.perform_submit_requirement(
                 req_id, 
                 comment_text.get("1.0", tk.END).strip(), 
-                self.selected_submit_attachment_source_path, # Pass selected source path
                 submit_window
             )
         ).pack(side=tk.RIGHT)
 
-    def select_submit_attachment(self):
-        """選擇提交需求單時的附件"""
-        filepath = filedialog.askopenfilename()
-        if filepath:
-            self.selected_submit_attachment_source_path = filepath
-            self.submit_attachment_path_var.set(os.path.basename(filepath))
-        else:
-            # If selection is cancelled, ensure paths are cleared
-            self.selected_submit_attachment_source_path = None
-            self.submit_attachment_path_var.set("")
-        
-    def perform_submit_requirement(self, req_id, comment, attachment_source_path, window):
+    def perform_submit_requirement(self, req_id, comment, window):
         """執行提交需求單操作"""
         if not comment:
             messagebox.showwarning("警告", "請填寫完成情況說明", parent=window)
             return
-
-        # 處理附件
-        attachment_db_path_for_submit = None
-        if attachment_source_path: # Use the passed argument
-            uploads_dir = "uploads"
-            os.makedirs(uploads_dir, exist_ok=True)
             
-            original_filename = os.path.basename(attachment_source_path)
-            filename_base, file_extension = os.path.splitext(original_filename)
-            timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
-            unique_filename = f"{filename_base}_{timestamp}{file_extension}"
-            
-            destination_path = os.path.join(uploads_dir, unique_filename)
-            
-            try:
-                shutil.copy2(attachment_source_path, destination_path)
-                attachment_db_path_for_submit = destination_path
-                print(f"提交的附件已儲存到: {destination_path}")
-            except Exception as e:
-                messagebox.showerror("錯誤", f"複製提交的附件失敗: {e}", parent=window)
-                return
-            
-        if self.execute_with_connection(submit_requirement, req_id, comment, attachment_db_path_for_submit):
+        if self.execute_with_connection(submit_requirement, req_id, comment, None):
             messagebox.showinfo("成功", "需求單已提交，等待管理員審核")
             window.destroy()
             self.load_user_requirements()  # 重新加載需求單列表
-            # Clear submit attachment vars after successful submission
-            self.selected_submit_attachment_source_path = None
-            self.submit_attachment_path_var.set("")
         else:
-            messagebox.showerror("錯誤", "提交需求單失敗") 
+            messagebox.showerror("錯誤", "提交需求單失敗")
 
     def perform_approve_requirement(self, req_id, window=None):
         """執行審核通過需求單"""
@@ -2259,7 +2156,7 @@ class RequirementManager:
                 print(traceback.format_exc())
                     
         # 設置標籤顏色
-        self.admin_reviewing_treeview.tag_configure('urgent', background='#ffecec')
+        self.admin_reviewing_treeview.tag_configure('urgent', background='#d4edff')
 
     def show_reviewing_requirement_details(self, event):
         """顯示待審核需求單詳情"""
